@@ -32,11 +32,12 @@ class TensorWrapper(gym.Wrapper):
 		return obs
 
 	def reset(self, task_idx=None):
-		return self._obs_to_tensor(self.env.reset())
+		obs, info = self.env.reset()
+		return self._obs_to_tensor(obs)
 
 	def step(self, action):
 		obs, reward, done, info = self.env.step(action.numpy())
 		info = defaultdict(float, info)
 		info['success'] = float(info['success'])
 		info['terminated'] = torch.tensor(float(info['terminated']))
-		return self._obs_to_tensor(obs), torch.tensor(reward, dtype=torch.float32), done, info
+		return self._obs_to_tensor(obs), reward, done, info

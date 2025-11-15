@@ -3,14 +3,14 @@ import warnings
 
 import gymnasium as gym
 
-from envs.wrappers.multitask import MultitaskWrapper
-from envs.wrappers.tensor import TensorWrapper
+from tdmpc2.envs.wrappers.multitask import MultitaskWrapper
+from tdmpc2.envs.wrappers.tensor import TensorWrapper
 
 def missing_dependencies(task):
 	raise ValueError(f'Missing dependencies for task {task}; install dependencies to use this environment.')
 
 try:
-	from envs.dmcontrol import make_env as make_dm_control_env
+	from tdmpc2.envs.dmcontrol import make_env as make_dm_control_env
 except:
 	make_dm_control_env = missing_dependencies
 try:
@@ -29,7 +29,10 @@ try:
 	from envs.mujoco import make_env as make_mujoco_env
 except:
 	make_mujoco_env = missing_dependencies
-
+try:
+	from tdmpc2.envs.isaaclab import make_env as make_isaaclab_env
+except:
+	make_isaaclab_env = missing_dependencies
 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
@@ -55,24 +58,24 @@ def make_multitask_env(cfg):
 	return env
 	
 
-def make_env(cfg):
+def make_env(cfg, env_cfg=None):
 	"""
 	Make an environment for TD-MPC2 experiments.
 	"""
-	gym.logger.set_level(40)
+	# gym.logger.set_level(40)
 	if cfg.multitask:
 		env = make_multitask_env(cfg)
 
 	else:
 		env = None
-		for fn in [make_dm_control_env, make_maniskill_env, make_metaworld_env, make_myosuite_env, make_mujoco_env]:
-			try:
-				env = fn(cfg)
-			except ValueError:
-				pass
-		if env is None:
-			raise ValueError(f'Failed to make environment "{cfg.task}": please verify that dependencies are installed and that the task exists.')
-		env = TensorWrapper(env)
+		# for fn in [make_dm_control_env, make_maniskill_env, make_metaworld_env, make_myosuite_env, make_mujoco_env]:
+		# 	try:
+		# 		env = fn(cfg)
+		# 	except:
+		# 		pass
+		# if env is None:
+		# 	raise ValueError(f'Failed to make environment "{cfg.task}": please verify that dependencies are installed and that the task exists.')
+		env = make_isaaclab_env(cfg, env_cfg)	
 	try: # Dict
 		cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
 	except: # Box
@@ -80,4 +83,5 @@ def make_env(cfg):
 	cfg.action_dim = env.action_space.shape[0]
 	cfg.episode_length = env.max_episode_steps
 	cfg.seed_steps = max(1000, 5*cfg.episode_length)
+	env = TensorWrapper(env)
 	return env
