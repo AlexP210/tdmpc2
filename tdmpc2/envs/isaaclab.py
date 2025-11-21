@@ -6,6 +6,9 @@ import evaluation.tasks  # noqa: F401
 
 ISAACLAB_TASKS = {
 	"Template-Evaluation-Direct-v0":"Template-Evaluation-Direct-v0",
+	"Isaac-Forge-PegInsert-Direct-v0": "Isaac-Forge-PegInsert-Direct-v0",
+	"Isaac-Forge-GearMesh-Direct-v0": "Isaac-Forge-GearMesh-Direct-v0",
+	"Isaac-Forge-NutThread-Direct-v0": "Isaac-Forge-NutThread-Direct-v0"
 }
 
 class FlattenAction(gym.ActionWrapper):
