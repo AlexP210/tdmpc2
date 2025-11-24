@@ -27,19 +27,23 @@ class OnlineTrainer(Trainer):
 
 	def eval(self):
 		"""Evaluate a TD-MPC2 agent."""
-		ep_rewards, ep_successes, ep_lengths = [], [], []
+		ep_rewards, ep_successes, ep_lengths, ep_plan_latency = [], [], [], []
 		for i in range(self.cfg.eval_episodes):
 			obs, done, ep_reward, t = self.env.reset(), False, 0, 0
 			if self.cfg.save_video:
 				self.logger.video.init(self.env, enabled=(i==0))
+			plan_latency = []
 			while not done:
 				torch.compiler.cudagraph_mark_step_begin()
+				t_start = time()
 				action = self.agent.act(obs, t0=t==0, eval_mode=True)
+				plan_latency.append(time() - t_start)
 				obs, reward, done, info = self.env.step(action)
 				ep_reward += reward
 				t += 1
 				if self.cfg.save_video:
 					self.logger.video.record(self.env)
+			ep_plan_latency.append(sum(plan_latency)/len(plan_latency))
 			ep_rewards.append(ep_reward)
 			ep_successes.append(info['success'])
 			ep_lengths.append(t)
@@ -49,6 +53,7 @@ class OnlineTrainer(Trainer):
 			episode_reward=np.nanmean(ep_rewards),
 			episode_success=np.nanmean(ep_successes),
 			episode_length= np.nanmean(ep_lengths),
+			episode_plan_latency=np.nanmean(ep_plan_latency)
 		)
 
 	def to_td(self, obs, action=None, reward=None, terminated=None):

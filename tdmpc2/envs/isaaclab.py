@@ -40,10 +40,14 @@ class IsaacLabWrapper(gym.Wrapper):
 		obs, reward, terminated, truncated, info = self.env.step(action)
 		self._cumulative_reward += reward
 		done = terminated or truncated
-		info['terminated'] = terminated[0].detach().clone().cpu()
+		info['terminated'] = done
+		info["success"] = float(info["logs_rew_curr_engaged"])
 		return_value = (self._squeeze_obs(obs), reward[0].detach().clone().cpu(), terminated[0].detach().clone().cpu(), truncated[0].detach().clone().cpu(), info)
 		del obs, action, terminated, truncated, info
 		return return_value
+
+	def render(self):
+		return self.env.render()
 
 	def _squeeze_obs(self, obs):
 		new_obs = obs["policy"].detach().clone().cpu()#.squeeze()
@@ -67,9 +71,9 @@ def make_env(cfg, env_cfg):
 	print("In IsaacLab env maker")
 	if not cfg.task in ISAACLAB_TASKS:
 		raise ValueError('Unknown task:', cfg.task)
-	env = gym.make(ISAACLAB_TASKS[cfg.task], cfg=env_cfg)
+	env = gym.make(ISAACLAB_TASKS[cfg.task], cfg=env_cfg, render_mode="rgb_array")
 	env = IsaacLabWrapper(env, cfg)
 	env = gym.wrappers.FlattenObservation(env)
 	env = FlattenAction(env)
-	env = Timeout(env, max_episode_steps=1000)
+	env = Timeout(env, max_episode_steps=3000)
 	return env
