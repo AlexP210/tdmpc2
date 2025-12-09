@@ -8,7 +8,8 @@ ISAACLAB_TASKS = {
 	"Template-Evaluation-Direct-v0":"Template-Evaluation-Direct-v0",
 	"Isaac-Forge-PegInsert-Direct-v0": "Isaac-Forge-PegInsert-Direct-v0",
 	"Isaac-Forge-GearMesh-Direct-v0": "Isaac-Forge-GearMesh-Direct-v0",
-	"Isaac-Forge-NutThread-Direct-v0": "Isaac-Forge-NutThread-Direct-v0"
+	"Isaac-Forge-NutThread-Direct-v0": "Isaac-Forge-NutThread-Direct-v0",
+	"DistillPlan-Place-Toy2Box-Agibot-Right-Arm-RmpFlow-v0":"DistillPlan-Place-Toy2Box-Agibot-Right-Arm-RmpFlow-v0"
 }
 
 class FlattenAction(gym.ActionWrapper):
@@ -41,7 +42,7 @@ class IsaacLabWrapper(gym.Wrapper):
 		self._cumulative_reward += reward
 		done = terminated or truncated
 		info['terminated'] = done
-		info["success"] = float(info["logs_rew_curr_engaged"])
+		# info["success"] = float(info["logs_rew_curr_engaged"])
 		return_value = (self._squeeze_obs(obs), reward[0].detach().clone().cpu(), terminated[0].detach().clone().cpu(), truncated[0].detach().clone().cpu(), info)
 		del obs, action, terminated, truncated, info
 		return return_value
@@ -50,7 +51,9 @@ class IsaacLabWrapper(gym.Wrapper):
 		return self.env.render()
 
 	def _squeeze_obs(self, obs):
-		new_obs = obs["policy"].detach().clone().cpu()#.squeeze()
+		new_obs = {k:o.cpu() for k,o in obs.items()} # ["policy"].detach().clone().cpu()#.squeeze()
+		# print(new_obs)
+		# print(new_obs.shape)
 		return new_obs
 
 	@property
