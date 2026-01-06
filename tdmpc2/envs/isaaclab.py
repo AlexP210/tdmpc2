@@ -48,14 +48,13 @@ class IsaacLabWrapper(gym.Wrapper):
         action = torch.from_numpy(action)
         obs, reward, terminated, truncated, info = self.env.step(action)
         self._cumulative_reward += reward
-        done = terminated or truncated
+        done = (terminated | truncated).all()
         info["terminated"] = done
-        # info["success"] = float(info["logs_rew_curr_engaged"])
         return_value = (
             self._squeeze_obs(obs),
-            reward[0].detach().clone().cpu(),
-            terminated[0].detach().clone().cpu(),
-            truncated[0].detach().clone().cpu(),
+            reward.cpu(),
+            terminated.cpu(),
+            truncated.cpu(),
             info,
         )
         del obs, action, terminated, truncated, info
@@ -93,7 +92,7 @@ def make_env(cfg, env_cfg):
         raise ValueError("Unknown task:", cfg.task)
     env = gym.make(ISAACLAB_TASKS[cfg.task], cfg=env_cfg, render_mode="rgb_array")
     env = IsaacLabWrapper(env, cfg, cfg.task)
-    env = gym.wrappers.FlattenObservation(env)
-    env = FlattenAction(env)
-    env = Timeout(env, max_episode_steps=600)
+    # env = gym.wrappers.FlattenObservation(env)
+    # env = FlattenAction(env)
+    # env = Timeout(env, max_episode_steps=600)
     return env
