@@ -42,7 +42,7 @@ class IsaacLabWrapper(gym.Wrapper):
     def reset(self, **kwargs):
         self._cumulative_reward = 0
         obs, info = self.env.reset()
-        return self._squeeze_obs(obs), info
+        return self.obs_to_cpu(obs), info
 
     def step(self, action):
         action = torch.from_numpy(action)
@@ -52,25 +52,23 @@ class IsaacLabWrapper(gym.Wrapper):
         info["terminated"] = done
         # info["success"] = float(info["logs_rew_curr_engaged"])
         return_value = (
-            self._squeeze_obs(obs),
-            reward[0].detach().clone().cpu(),
-            terminated[0].detach().clone().cpu(),
-            truncated[0].detach().clone().cpu(),
+            self.obs_to_cpu(obs),
+            reward.cpu(),
+            terminated.cpu(),
+            truncated.cpu(),
             info,
         )
-        del obs, action, terminated, truncated, info
         return return_value
 
     def render(self):
         return self.env.render()
 
-    def _squeeze_obs(self, obs):
+    def obs_to_cpu(self, obs):
         if self.task_name == "Locomotion-Manager-v0":
             new_obs = {k: o.cpu() for k, o in obs.items()}  #
         if self.task_name == "BoxPlace-Direct-v0":
             new_obs = obs["policy"].cpu()  # .squeeze()
         # print(new_obs)
-        # print(new_obs.shape)
         return new_obs
 
     @property
@@ -93,7 +91,7 @@ def make_env(cfg, env_cfg):
         raise ValueError("Unknown task:", cfg.task)
     env = gym.make(ISAACLAB_TASKS[cfg.task], cfg=env_cfg, render_mode="rgb_array")
     env = IsaacLabWrapper(env, cfg, cfg.task)
-    env = gym.wrappers.FlattenObservation(env)
-    env = FlattenAction(env)
-    env = Timeout(env, max_episode_steps=600)
+    # env = gym.wrappers.FlattenObservation(env)
+    # env = FlattenAction(env)
+    # env = Timeout(env, max_episode_steps=600)
     return env
