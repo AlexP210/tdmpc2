@@ -262,9 +262,10 @@ class TDMPC2(torch.nn.Module):
             elite_idxs = torch.topk(  # STOPPED HERE
                 value.squeeze(2), self.cfg.num_elites, dim=0
             ).indices
-
+            print("Elite idxs: ", elite_idxs.shape)
             elite_value, elite_actions = value[elite_idxs], actions[:, elite_idxs]
-
+            print("Elite Value: ", elite_value.shape)
+            print("Elite Actions: ", elite_actions.shape)
             # Update parameters
             max_value = elite_value.max(0).values
             score = torch.exp(self.cfg.temperature * (elite_value - max_value))
