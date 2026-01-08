@@ -108,22 +108,29 @@ class OnlineTrainer(Trainer):
         self._tds_for_each_env = [
             [] for _ in range(self.cfg.num_envs)
         ]  # Episode history for each env
-        self._holding_envs = {}  # Envs currently holding while we wait for eval
+        self._holding_envs = {}  # Envs currently holding while we wait for reset
+        # NOTE: Ideally we would reset envs whenever they are finished; but for some reason
+        # IsaacLab's FactoryEnv examples (which box-place is based on) require all envs to be
+        # reset at once. They don't explain why, but if you try to do staggered resets, IsaacSim 
+        # errors out with uninformative error message "cannot set body poses in backend"
+        self._pretraining_done = False # Flag to indicate if the pretraining on the seed steps has been done
+        # NOTE: Had to add this because with lots of envs goign at once we can get collect > `self.cfg.seed_steps`
+        # before the first episode even finishes
+        self._step_at_last_eval = -float("inf")
+        # NOTE: Same thing here; in between iterations of the loop self._step can and does increase by more than one
+        # with multiple envs
 
         # While we need more steps
         while self._step <= self.cfg.steps:
-
             # Evaluate agent periodically
-            if self._step % self.cfg.eval_freq == 0:
+            if self._step - self._step_at_last_eval >= self.cfg.eval_freq:
                 eval_next = True  # Eval at the next opportunity
 
-            # If any environment is in a `done` state
-            if done.any():
-                # Which environments are in the `done` state
-                done_idx = torch.nonzero(done, as_tuple=True)[0]
+            # If all environments are in a `done` state, process thee episode data and reset them
+            if done.all():
 
-                # If we're due for an eval, then wait for all envs to be done.
-                if eval_next and done.all():
+                # First, if we're due for an eval, do it
+                if eval_next:
                     eval_metrics = (
                         self.eval()
                     )  # Average reward, success and length for eval episodes (on env 0)
@@ -132,66 +139,64 @@ class OnlineTrainer(Trainer):
                     )  # step #, episode #, elapsed time, steps / s
                     self.logger.log(eval_metrics, "eval")
                     eval_next = False
+                    self._step_at_last_eval = self._step
+                    # No envs are being held anymore
                     self._holding_envs = {}
 
-                # If we have train episode data, update our train logs
+                # Next, update our train metrics and add the episodes to the buffer
                 if self._step > 0:
-                    # For all the newly done envs
-                    newly_done_envs = [
-                        i for i in done_idx if i not in self._holding_envs
-                    ]
-                    for env_id in newly_done_envs:
+                    # Update the train metrics
+                    total_reward = 0
+                    total_success = 0
+                    total_length = 0
+                    total_terminated = 0
+                    for env_id in range(self.cfg.num_envs):
                         if terminated[env_id] and not self.cfg.episodic:
                             raise ValueError(
                                 "Termination detected but you are not in episodic mode. "
                                 "Set `episodic=true` to enable support for terminations."
                             )
-                        train_metrics.update(
-                            episode_reward=torch.tensor(
-                                [
-                                    td["reward"]
-                                    for td in self._tds_for_each_env[env_id][1:]
-                                ]
-                            ).sum(),  # Total rewards from the episode
-                            episode_success=info["successes"][
-                                env_id
-                            ],  # Whether the last transition was a success
-                            episode_length=len(
-                                self._tds_for_each_env[env_id]
-                            ),  # Number of steps in the episode
-                            episode_terminated=terminated[
-                                env_id
-                            ],  # Whether the last transition was a termination (as opposed to a truncation)
-                        )
-                        train_metrics.update(
-                            self.common_metrics()
-                        )  # step #, episode #, elapsed time, steps / s
-                        self.logger.log(train_metrics, "train")
+                        total_reward += torch.tensor([td["reward"] for td in self._tds_for_each_env[env_id][1:]]).sum()
+                        total_success += info["successes"][env_id]
+                        total_length += len(self._tds_for_each_env[env_id])
+                        total_terminated += terminated[env_id]
+                        # Concatenate all transitions, add to the buffer
                         self._ep_idx = self.buffer.add(
                             torch.cat(self._tds_for_each_env[env_id])
-                        )  # Concatenate all transitions, add to the buffer
+                        ) 
                         self._tds_for_each_env[env_id] = []
+                    # Add the average metrics across all envs to the train metrics
+                    train_metrics.update(
+                        episode_reward=total_reward/self.cfg.num_envs,  # Total rewards from the episode
+                        episode_success=total_success/self.cfg.num_envs,  # Whether the last transition was a success
+                        episode_length=total_length/self.cfg.num_envs,  # Number of steps in the episode
+                        episode_terminated=total_terminated/self.cfg.num_envs,  # Whether the last transition was a termination (as opposed to a truncation)
+                    )
+                    train_metrics.update(
+                        self.common_metrics()
+                    )  # step #, episode #, elapsed time, steps / s
+                    self.logger.log(train_metrics, "train")
 
-                # For each environment in a `done` state
-                if done.all():
-                    obs = self.env.reset()
-                    for env_id in range(self.cfg.num_envs):
-                        first_obs = obs[env_id]
-                        self._tds_for_each_env[env_id].append(self.to_td(first_obs))
-                # Add it to the list of held environments in preparation for an eval
-                else:
-                    for env_id in done_idx:
-                        self._holding_envs.add(env_id)
+                # Reset the environments
+                obs = self.env.reset()
+                for env_id in range(self.cfg.num_envs):
+                    first_obs = obs[env_id]
+                    self._tds_for_each_env[env_id].append(self.to_td(first_obs))
 
-            # For each environment, compute the action
-            actions = torch.zeros(size=(self.cfg.num_envs, self.cfg.action_dim))
+            # If not all environments are done, track which are so we can avoid collecting further data
+            # until we can do the reset
+            elif done.any():
+                self._holding_envs.update(torch.nonzero(done, as_tuple=True)[0]) 
+
+            # Which environments are still running
             non_held_envs = [
                 i for i in range(self.cfg.num_envs) if i not in self._holding_envs
             ]
+            actions = torch.zeros(size=(self.cfg.num_envs, self.cfg.action_dim))
             for env_id in non_held_envs:
-                last_obs = self._tds_for_each_env[env_id][-1]["obs"]
+                last_obs = self._tds_for_each_env[env_id][-1]["obs"][0]
                 # Choose a random or planned action depending on whether we're still collecting seed data
-                if self._step > self.cfg.seed_steps:
+                if self._pretraining_done:
                     actions[env_id] = self.agent.act(
                         last_obs, t0=len(self._tds_for_each_env[env_id]) == 1
                     )
@@ -202,8 +207,8 @@ class OnlineTrainer(Trainer):
             obs, reward, terminated, truncated, info = self.env.step(actions)
             done = terminated | truncated
 
+            # Turn the transition to a tensordict and add to the transition list
             for env_id in non_held_envs:
-                # Turn the transition to a tensordict and add to the transition list
                 self._tds_for_each_env[env_id].append(
                     self.to_td(
                         obs[env_id], actions[env_id], reward[env_id], terminated[env_id]
@@ -211,14 +216,16 @@ class OnlineTrainer(Trainer):
                 )
                 self._step += 1
 
-            # Update agent
-            if self._step >= self.cfg.seed_steps:
-
-                if self._step == self.cfg.seed_steps:
+            # Update agent if we've collected enough for pretraining 
+            # and have at least one episode in the buffer
+            if self._step >= self.cfg.seed_steps and self.buffer.num_eps > 0:
+                
+                if not self._pretraining_done:
                     num_updates = self.cfg.seed_steps
                     print("Pretraining agent on seed data...")
+                    self._pretraining_done = True
                 else:
-                    num_updates = 1
+                    num_updates = self.cfg.num_envs
 
                 for _ in range(num_updates):
                     _train_metrics = self.agent.update(

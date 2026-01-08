@@ -18,7 +18,7 @@ class TDMPC2(torch.nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.device = torch.device("cuda:0")
+        self.device = torch.device(cfg.device)
         self.model = WorldModel(cfg).to(self.device)
         self.optim = torch.optim.Adam(
             [
@@ -56,7 +56,7 @@ class TDMPC2(torch.nn.Module):
         self.discount = (
             torch.tensor(
                 [self._get_discount(ep_len) for ep_len in cfg.episode_lengths],
-                device="cuda:0",
+                device=cfg.device,
             )
             if self.cfg.multitask
             else self._get_discount(cfg.episode_length)
