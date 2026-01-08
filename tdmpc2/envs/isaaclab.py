@@ -37,38 +37,44 @@ class IsaacLabWrapper(gym.Wrapper):
         self.env = env
         self.cfg = cfg
         self.task_name = task_name
-        self._cumulative_reward = 0
 
-    def reset(self, **kwargs):
-        self._cumulative_reward = 0
-        obs, info = self.env.reset()
-        return self.obs_to_cpu(obs), info
+    def reset(self, env_id=None):
+        if env_id is None:
+            obs, _ = self.env.reset()
+        else:
+            self.env.unwrapped._reset_idx(
+                env_ids=torch.tensor(
+                    [
+                        env_id,
+                    ]
+                )
+            )
+            obs = self.env.unwrapped._get_observations()
+        return self.obs_to_cpu(obs)
 
     def step(self, action):
         action = torch.from_numpy(action)
         obs, reward, terminated, truncated, info = self.env.step(action)
-        self._cumulative_reward += reward
-        done = terminated or truncated
-        info["terminated"] = done
-        # info["success"] = float(info["logs_rew_curr_engaged"])
         return_value = (
             self.obs_to_cpu(obs),
             reward.cpu(),
             terminated.cpu(),
             truncated.cpu(),
-            info,
+            self.info_to_cpu(info),
         )
         return return_value
 
     def render(self):
         return self.env.render()
 
+    def info_to_cpu(self, info):
+        return {key: val.cpu() for key, val in info.items()}
+
     def obs_to_cpu(self, obs):
         if self.task_name == "Locomotion-Manager-v0":
             new_obs = {k: o.cpu() for k, o in obs.items()}  #
         if self.task_name == "BoxPlace-Direct-v0":
-            new_obs = obs["policy"].cpu()  # .squeeze()
-        # print(new_obs)
+            new_obs = obs["policy"].cpu()
         return new_obs
 
     @property
@@ -91,7 +97,4 @@ def make_env(cfg, env_cfg):
         raise ValueError("Unknown task:", cfg.task)
     env = gym.make(ISAACLAB_TASKS[cfg.task], cfg=env_cfg, render_mode="rgb_array")
     env = IsaacLabWrapper(env, cfg, cfg.task)
-    # env = gym.wrappers.FlattenObservation(env)
-    # env = FlattenAction(env)
-    # env = Timeout(env, max_episode_steps=600)
     return env

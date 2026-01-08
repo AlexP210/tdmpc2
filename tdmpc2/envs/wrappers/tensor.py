@@ -31,13 +31,11 @@ class TensorWrapper(gym.Wrapper):
             obs = self._try_f32_tensor(obs)
         return obs
 
-    def reset(self, task_idx=None):
-        obs, info = self.env.reset()
+    def reset(self, task_idx=None, env_id=None):
+        obs = self.env.reset(env_id)
         return self._obs_to_tensor(obs)
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action.numpy())
         info = defaultdict(float, info)
-        info["success"] = float(info["success"])
-        info["terminated"] = torch.tensor(float(info["terminated"]))
         return self._obs_to_tensor(obs), reward, terminated, truncated, info
