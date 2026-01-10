@@ -30,23 +30,30 @@ class OnlineTrainer(Trainer):
         # Store the total reward, episode success, episode length for each of the eval episodes
         ep_rewards, ep_successes, ep_lengths = [], [], []
 
-        # Run all `num_envs` envronments until we've collected enough episodes
+        # Run all environments `self.cfg_eval_episodes` times
         for i in range(self.cfg.eval_episodes):
-            parallel_obs, done, ep_reward, t = (
+            parallel_obs, parallel_done, parallel_ep_reward, t = (
                 self.env.reset(),
-                False,
-                0,
+                torch.full(size=(self.cfg.num_envs,1),fill_value=False),
+                torch.full(size=(self.cfg.num_envs,1),fill_value=0.0),
                 0,
             )
-            obs = parallel_obs[0]
             if self.cfg.save_video:
                 self.logger.video.init(self.env, enabled=(i == 0))
-            while not done:
+
+            while not parallel_done.all():
+                # Find which ones are not done yet
+                not_done_envs = torch.nonzero(~parallel_done, as_tuple=True)[0]
                 torch.compiler.cudagraph_mark_step_begin()
+
+                # Compute the actions for those that are not done yet
                 parallel_actions = torch.zeros(
                     size=(self.cfg.num_envs, self.cfg.action_dim)
                 )
-                parallel_actions[0] = self.agent.act(obs, t0=t == 0, eval_mode=True)
+                for env_id in not_done_envs:
+                    parallel_actions[env_id] = self.agent.act(parallel_obs[env_id], t0=t == 0, eval_mode=True)
+                
+                # Apply the actions for all of them (only non-zero for those that are not done)
                 (
                     parallel_obs,
                     parallel_reward,
@@ -54,20 +61,24 @@ class OnlineTrainer(Trainer):
                     parallel_truncated,
                     info,
                 ) = self.env.step(parallel_actions)
-                obs = parallel_obs[0]
-                reward = parallel_reward[0]
-                terminated = parallel_terminated[0]
-                truncated = parallel_truncated[0]
-                done = terminated or truncated
-                ep_reward += reward
-                t += 1
+
+                # For each env that was just updated, add the reward
+                for env_id in not_done_envs:
+                    parallel_ep_reward[env_id] += parallel_reward[env_id]
+                    t += 1
+
+                # Record a frame of video
                 if self.cfg.save_video:
                     self.logger.video.record(self.env)
 
-            ep_rewards.append(ep_reward)
-            ep_successes.append(info["successes"][0])
-            ep_lengths.append(info["episode_lengths"][0])
+                # Find which envs are done
+                parallel_done = parallel_terminated | parallel_truncated
+            # Episode is done, average the total reward, episode success and episode length across all envs
+            ep_rewards.append(parallel_ep_reward.mean())
+            ep_successes.append(info["successes"].float().mean())
+            ep_lengths.append(info["episode_lengths"].float().mean())
 
+            # Save the video
             if self.cfg.save_video:
                 self.logger.video.save(self._step)
 
@@ -108,7 +119,7 @@ class OnlineTrainer(Trainer):
         self._tds_for_each_env = [
             [] for _ in range(self.cfg.num_envs)
         ]  # Episode history for each env
-        self._holding_envs = {}  # Envs currently holding while we wait for reset
+        self._holding_envs = set()  # Envs currently holding while we wait for reset
         # NOTE: Ideally we would reset envs whenever they are finished; but for some reason
         # IsaacLab's FactoryEnv examples (which box-place is based on) require all envs to be
         # reset at once. They don't explain why, but if you try to do staggered resets, IsaacSim 
@@ -126,7 +137,7 @@ class OnlineTrainer(Trainer):
             if self._step - self._step_at_last_eval >= self.cfg.eval_freq:
                 eval_next = True  # Eval at the next opportunity
 
-            # If all environments are in a `done` state, process thee episode data and reset them
+            # If all environments are in a `done` state, process the episode data and reset them
             if done.all():
 
                 # First, if we're due for an eval, do it
@@ -141,7 +152,7 @@ class OnlineTrainer(Trainer):
                     eval_next = False
                     self._step_at_last_eval = self._step
                     # No envs are being held anymore
-                    self._holding_envs = {}
+                    self._holding_envs = set()
 
                 # Next, update our train metrics and add the episodes to the buffer
                 if self._step > 0:
@@ -165,6 +176,7 @@ class OnlineTrainer(Trainer):
                             torch.cat(self._tds_for_each_env[env_id])
                         ) 
                         self._tds_for_each_env[env_id] = []
+                        
                     # Add the average metrics across all envs to the train metrics
                     train_metrics.update(
                         episode_reward=total_reward/self.cfg.num_envs,  # Total rewards from the episode

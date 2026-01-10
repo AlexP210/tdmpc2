@@ -50,11 +50,35 @@ class IsaacLabWrapper(gym.Wrapper):
                 )
             )
             obs = self.env.unwrapped._get_observations()
+        if type(obs) == type(dict()):
+            obs = obs[self.cfg.obs]
         return self.obs_to_cpu(obs)
 
     def step(self, action):
         action = torch.from_numpy(action)
         obs, reward, terminated, truncated, info = self.env.step(action)
+         # If the env is returning us a dict
+        if type(obs) == type(dict()):
+            obs = obs[self.cfg.obs]
+
+        if "Manager" in self.task_name:
+            # For the manager-based envs, we need to get the termination and truncation
+            # signal from the `info` dict; if we do it normally, then the ManagerBasedRLEnv
+            # will automatically reset specific envs that have the termination or truncated flags
+            # For consistency with the FactoryEnv's, we want to reset them all together instead so 
+            # can't do this
+            terminated = torch.full_like(terminated, fill_value=False)
+            truncated = torch.full_like(truncated, fill_value=False)
+            for key, val in info.items():
+                if key.split("/")[0] == "termination": terminated |= val
+                elif key.split("/")[0] == "truncation": truncated |= val
+            # Shuffle around the info dict
+            successes = info["successes"]
+            episode_length = info["episode_lengths"]
+            info = {}
+            info["successes"] = successes
+            info["episode_lengths"] = episode_length
+        
         return_value = (
             self.obs_to_cpu(obs),
             reward.cpu(),
@@ -68,14 +92,10 @@ class IsaacLabWrapper(gym.Wrapper):
         return self.env.render()
 
     def info_to_cpu(self, info):
-        return {key: val.cpu() for key, val in info.items()}
+        return {key: val.cpu()  for key, val in info.items()}
 
     def obs_to_cpu(self, obs):
-        if self.task_name == "Locomotion-Manager-v0":
-            new_obs = {k: o.cpu() for k, o in obs.items()}  #
-        if self.task_name == "BoxPlace-Direct-v0":
-            new_obs = obs["policy"].cpu()
-        return new_obs
+        return obs.cpu()
 
     @property
     def unwrapped(self):

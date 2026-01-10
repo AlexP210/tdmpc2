@@ -71,19 +71,14 @@ def make_env(cfg, env_cfg=None):
         env = make_multitask_env(cfg)
 
     else:
-        env = None
-        # for fn in [make_dm_control_env, make_maniskill_env, make_metaworld_env, make_myosuite_env, make_mujoco_env]:
-        # 	try:
-        # 		env = fn(cfg)
-        # 	except:
-        # 		pass
-        # if env is None:
-        # 	raise ValueError(f'Failed to make environment "{cfg.task}": please verify that dependencies are installed and that the task exists.')
         env = make_isaaclab_env(cfg, env_cfg)
-    try:  # Dict
-        cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
-    except:  # Box
-        cfg.obs_shape = {cfg.get("obs", "state"): env.observation_space.shape}
+    # If env observation space is a Dict, return a dict with just {`key`:`shape`}
+    obs_format = cfg.get("obs")
+    if type(env.observation_space) == type(gym.spaces.Dict(spaces={})):
+        cfg.obs_shape = {obs_format: env.observation_space.spaces[obs_format].shape}
+    # If env observation space is a Box, return a dict with just {`obs_type`:`shape`}
+    elif type(env.observation_space) == type(gym.spaces.Box(low=0, high=1)):
+        cfg.obs_shape = {obs_format: env.observation_space.shape}
     cfg.action_dim = env.action_space.shape[1]
     cfg.episode_length = env.unwrapped.max_episode_length
     cfg.seed_steps = max(1000, 5 * cfg.episode_length)
