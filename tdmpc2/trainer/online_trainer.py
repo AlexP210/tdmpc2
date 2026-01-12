@@ -119,7 +119,7 @@ class OnlineTrainer(Trainer):
         self._tds_for_each_env = [
             [] for _ in range(self.cfg.num_envs)
         ]  # Episode history for each env
-        self._holding_envs = set()  # Envs currently holding while we wait for reset
+        # self._holding_envs = set()  # Envs currently holding while we wait for reset
         # NOTE: Ideally we would reset envs whenever they are finished; but for some reason
         # IsaacLab's FactoryEnv examples (which box-place is based on) require all envs to be
         # reset at once. They don't explain why, but if you try to do staggered resets, IsaacSim 
@@ -195,17 +195,12 @@ class OnlineTrainer(Trainer):
                     first_obs = obs[env_id]
                     self._tds_for_each_env[env_id].append(self.to_td(first_obs))
 
-            # If not all environments are done, track which are so we can avoid collecting further data
-            # until we can do the reset
-            elif done.any():
-                self._holding_envs.update(torch.nonzero(done, as_tuple=True)[0]) 
-
             # Which environments are still running
-            non_held_envs = [
-                i for i in range(self.cfg.num_envs) if i not in self._holding_envs
-            ]
+            not_done_envs = torch.nonzero(~done, as_tuple=True)[0]
+
+            # Prepare actions for the envs that are not done
             actions = torch.zeros(size=(self.cfg.num_envs, self.cfg.action_dim))
-            for env_id in non_held_envs:
+            for env_id in not_done_envs:
                 last_obs = self._tds_for_each_env[env_id][-1]["obs"][0]
                 # Choose a random or planned action depending on whether we're still collecting seed data
                 if self._pretraining_done:
@@ -220,7 +215,7 @@ class OnlineTrainer(Trainer):
             done = terminated | truncated
 
             # Turn the transition to a tensordict and add to the transition list
-            for env_id in non_held_envs:
+            for env_id in not_done_envs:
                 self._tds_for_each_env[env_id].append(
                     self.to_td(
                         obs[env_id], actions[env_id], reward[env_id], terminated[env_id]
