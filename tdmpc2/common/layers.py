@@ -174,7 +174,6 @@ def enc(cfg, out={}):
     Returns a dictionary of encoders for each observation in the dict.
     """
     for k in cfg.obs_shape.keys():
-        print(cfg.obs_shape)
         if k == "state":
             out[k] = mlp(
                 cfg.obs_shape[k][1] + cfg.task_dim,

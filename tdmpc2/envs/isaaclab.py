@@ -3,6 +3,7 @@ import gymnasium as gym
 from tdmpc2.envs.wrappers.timeout import Timeout
 import torch
 import evaluation.tasks  # noqa: F401
+from collections import defaultdict, deque
 
 ISAACLAB_TASKS = {
     "Template-Evaluation-Direct-v0": "Template-Evaluation-Direct-v0",
@@ -78,7 +79,6 @@ class IsaacLabWrapper(gym.Wrapper):
             info = {}
             info["successes"] = successes
             info["episode_lengths"] = episode_length
-        
         return_value = (
             self.obs_to_cpu(obs),
             reward.cpu(),
@@ -107,14 +107,39 @@ class IsaacLabWrapper(gym.Wrapper):
     def _get_obs(self, is_reset=False):
         return
 
+class Pixels(gym.Wrapper):
+    def __init__(self, env, cfg, num_frames=3):
+        super().__init__(env)
+        self.cfg = cfg
+        self.env = env
+        self.observation_space = gym.spaces.Box(
+            low=0, high=255, shape=(num_frames*3, 64, 64), dtype=np.uint8)
+        self._frames = deque([], maxlen=num_frames)
+
+    def _get_visual_obs(self, frame, is_reset=False):
+        num_frames = self._frames.maxlen if is_reset else 1
+        for _ in range(num_frames):
+            self._frames.append(frame)
+        past_n_frames = torch.concatenate(tuple(self._frames), axis=1)
+        return past_n_frames
+
+    def reset(self, env_id=None):
+        obs = self.env.reset(env_id=env_id)
+        return self._get_visual_obs(obs, is_reset=True)
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        return self._get_visual_obs(obs), reward, terminated, truncated, info
+
 
 def make_env(cfg, env_cfg):
     """
     Make classic/MuJoCo environment.
     """
-    print("In IsaacLab env maker")
     if not cfg.task in ISAACLAB_TASKS:
         raise ValueError("Unknown task:", cfg.task)
     env = gym.make(ISAACLAB_TASKS[cfg.task], cfg=env_cfg, render_mode="rgb_array")
     env = IsaacLabWrapper(env, cfg, cfg.task)
+    if cfg.obs == "rgb":
+        env = Pixels(cfg=cfg, env=env)
     return env
