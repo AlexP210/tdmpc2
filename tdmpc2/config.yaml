@@ -1,0 +1,54 @@
+run_name: collapse
+device: cuda:1
+
+training_data: /data/AlexPleava/outputs/dstl_pretrain_rl/BoxPlace-Direct-v0/1/2026-02-18_20-01-55/data/training.h5
+training_data_use_fraction: 1
+
+evaluation_data: /data/AlexPleava/outputs/dstl_task_collect_data/BoxPlace-Direct-v0/1/2026-02-28_20-47-37/data/training.h5
+evaluation_data_use_fraction: 0.25
+
+# Training fraction only needed if not using a dedicated eval dataset above
+training_fraction: ???
+validation_fraction: 0.5
+
+teacher_config: /data/AlexPleava/outputs/dstl_pretrain_rl/BoxPlace-Direct-v0/1/2026-02-18_20-01-55/params/agent.yaml
+teacher_model: /data/AlexPleava/outputs/dstl_pretrain_rl/BoxPlace-Direct-v0/1/2026-02-18_20-01-55/models/final.pt
+
+precompute_teacher_latents: False
+
+student_encoder_checkpoint: #/data/AlexPleava/outputs/students/student_encoder_19.pt
+student_dynamics_checkpoint: #/data/AlexPleava/outputs/students/student_dynamics_19.pt
+student_reward_checkpoint: #/data/AlexPleava/outputs/students/student_reward_19.pt
+
+action_dim: 7
+teacher_latent_dim: 512
+student_latent_dim: 20
+
+epochs: 1000
+
+encoder_hidden_dim: 50
+encoder_shared_hidden_layers: 3
+
+dynamics_hidden_dim: 50
+dynamics_shared_hidden_layers: 3
+
+reward_hidden_dim: 50
+reward_shared_hidden_layers: 3
+
+learning_rate: 1e-4
+batch_size: 128
+beta: 0
+validation_interval: 10 #epochs
+reward_ll_weight: 10
+dynamics_ll_weight: 1
+latent_samples: 5
+
+save_path: /data/AlexPleava/outputs/students
+use_wandb: False
+
+# MI estimation
+lmi_epochs: 100
+lmi_lr: 0.001
+lmi_patience: 10
+lmi_latent_size: 10
+lmi_validate_fraction: 0.2
