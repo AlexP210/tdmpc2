@@ -366,7 +366,7 @@ class TDMPC2(torch.nn.Module):
 		action, _ = self.model.pi(next_z)
 		return reward + self.discount * (1-terminated) * self.model.Q(next_z, action, return_type='min', target=True)
 
-	def _update_independant(self, observations, actions, extrinsic_rewards, terminateds):
+	def _update_independent(self, observations, actions, extrinsic_rewards, terminateds):
 		"""
 		# Updating the loss is not dependant on episetmic uncertainty, the variance of each single member is only used for its loss computation only
 		obs: A batch of [batch size], each element in the batch is four conseqtive observations (4 because T = 3 +1), each observation is obs dimension [T+1,B,39]
@@ -522,4 +522,4 @@ class TDMPC2(torch.nn.Module):
 			extrinsic_rewards.append(extrinsic_reward)
 			terminateds.append(terminated)
 		torch.compiler.cudagraph_mark_step_begin()
-		return self._update_independant(observations, actions, extrinsic_rewards, terminateds)
+		return self._update_independent(observations, actions, extrinsic_rewards, terminateds)
