@@ -3,11 +3,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dstl"
+name = "tdmpc2"
 version = "0.1.0"
-description = "DSTL: Distilling Specialized Task Latents"
+description = "TDMPC2: Scalable Model-Based RL for Fast Online Adaptation"
 authors = [
-    { name = "DSTL Authors", email = "alex.pleava@gmail.com" }
+    { name = "TD-MPC2 Authors", email = "tdmpc2.authors@fake-email.com" }
 ]
 dependencies = [
     "torch>=1.8.0",
@@ -21,4 +21,4 @@ packages = { find = {} }
 include-package-data = true
 
 [tool.setuptools.package-data]
-dstl = ["config.yaml"]
+tdmpc2 = ["config.yaml"]

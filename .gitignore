@@ -1,7 +1,7 @@
 # Logging
-dstl/logs/
-dstl/outputs/
-dstl/wandb/
+tdmpc2/logs/
+tdmpc2/outputs/
+tdmpc2/wandb/
 
 # HPC
 nautilus/*.yaml
