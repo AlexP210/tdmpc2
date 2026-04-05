@@ -1,9 +1,11 @@
 import numpy as np
 import gymnasium as gym
-from dstl.envs.wrappers.timeout import Timeout
+from tdmpc2.envs.wrappers.timeout import Timeout
 import torch
-import evaluation.tasks  # noqa: F401
 from collections import defaultdict, deque
+
+from isaaclab.app import AppLauncher
+
 
 class IsaacLabWrapper(gym.Wrapper):
     def __init__(self, env, cfg, task_name):
@@ -11,6 +13,8 @@ class IsaacLabWrapper(gym.Wrapper):
         self.env = env
         self.cfg = cfg
         self.task_name = task_name
+        self.max_episode_steps = (env.unwrapped.cfg.episode_length_s // env.unwrapped.cfg.sim.dt) // env.unwrapped.cfg.decimation
+        self.state_dim = env.unwrapped.cfg.state_space
 
     def reset(self, env_id=None):
         if env_id is None:
@@ -85,6 +89,8 @@ class Pixels(gym.Wrapper):
         super().__init__(env)
         self.cfg = cfg
         self.env = env
+        self.max_episode_steps = env.max_episode_steps
+        self.state_dim = env.state_dim
         self.observation_space = gym.spaces.Box(
             low=0, high=255, shape=(num_frames*3, 64, 64), dtype=np.uint8)
         self._frames = deque([], maxlen=num_frames)
@@ -104,11 +110,35 @@ class Pixels(gym.Wrapper):
         obs, reward, terminated, truncated, info = self.env.step(action)
         return self._get_visual_obs(obs), reward, terminated, truncated, info
 
-
-def make_env(cfg, env_cfg):
+app_launcher = None
+simulation_app = None
+tasks_module = None
+def make_env(cfg):
     """
     Make classic/MuJoCo environment.
     """
+    print("ENTERED make_env")
+    # Instantiate the IsaacLab simulator
+    global app_launcher, simulation_app, tasks_module
+    app_launcher = AppLauncher(launcher_args={
+        "livestream": int(cfg.visualize),
+        "enable_cameras": cfg.enable_cameras,
+        "device": cfg.device
+    })
+    simulation_app = app_launcher.app
+    import custom_isaaclab_tasks.tasks
+    tasks_module = custom_isaaclab_tasks.tasks
+
+    # Load the env_cfg
+    from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry
+    # Update the env_cfg based on the tdmpc2_cfg
+    env_cfg = load_cfg_from_registry(cfg.task, "env_cfg_entry_point")
+    env_cfg.scene.num_envs = cfg.num_envs
+    env_cfg.device = cfg.device
+    env_cfg.sim.device = cfg.device
+    env_cfg.task_index = cfg.task_index
+    env_cfg.seed = cfg.seed
+
     env = gym.make(cfg.task, cfg=env_cfg, render_mode="rgb_array")
     env = IsaacLabWrapper(env, cfg, cfg.task)
     if cfg.obs == "rgb":

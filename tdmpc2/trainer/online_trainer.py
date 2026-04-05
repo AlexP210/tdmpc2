@@ -5,7 +5,7 @@ import torch
 import h5py
 import os
 from tensordict.tensordict import TensorDict
-from dstl.trainer.base import Trainer
+from tdmpc2.trainer.base import Trainer
 
 
 class OnlineTrainer(Trainer):

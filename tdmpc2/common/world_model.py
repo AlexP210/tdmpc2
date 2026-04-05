@@ -10,7 +10,7 @@ from tdmpc2.common.layers import EnsembleStochasticLinear , EnsembleStochasticLi
 
 class WorldModel(nn.Module):
     """
-    UBP2 implicit world model architecture.
+    TD-MPC2 implicit world model architecture.
     """
 
     def __init__(self, cfg):
@@ -61,7 +61,7 @@ class WorldModel(nn.Module):
         self._target_Qs.__dict__["params"] = self._target_Qs_params
 
     def __repr__(self):
-        repr = 'DSTL World Model\n'
+        repr = 'TD-MPC2 World Model\n'
         modules = ['Encoder', 'Dynamics' , 'Reward', 'Termination', 'Policy prior', 'Q-functions']
         for i, m in enumerate([self._encoder, self._dynamics, self._reward, self._termination, self._pi, self._Qs]):
             if m == self._termination and not self.cfg.episodic:

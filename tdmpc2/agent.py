@@ -285,11 +285,11 @@ class TDMPC2(torch.nn.Module):
 			metric_values = planning_metric_map.get(metric_key, planning_metric_map["total_value"]) #the ubp reward [N,1]
 
 			# Top-k selection [64]
-			elite_idxs = torch.topk(metric_values, self.cfg.num_elites, dim=0).indices  # [num_elites]
+			elite_idxs = torch.topk(metric_values, self.cfg.num_elites, dim=0).indices  # [num_elites,1]
 
 			# Extract elite values and actions
-			elite_value = value[elite_idxs]                   # [num_elites, 1]
-			elite_actions = actions[:, elite_idxs]            # [horizon, num_elites, action_dim]
+			elite_value = value[elite_idxs]                   # [num_elites, 1, 1]
+			elite_actions = actions[:, elite_idxs]            # [horizon, num_elites, 1, action_dim]
 
 			# Extract elite info tensors
 			elite_info = {k: v[elite_idxs] for k, v in info.items()}  #[ num elites, 1]

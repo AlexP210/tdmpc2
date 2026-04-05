@@ -3,8 +3,10 @@ import warnings
 
 import gymnasium as gym
 
-from dstl.envs.wrappers.multitask import MultitaskWrapper
-from dstl.envs.wrappers.tensor import TensorWrapper
+from tdmpc2.envs.wrappers.multitask import MultitaskWrapper
+from tdmpc2.envs.wrappers.tensor import TensorWrapper
+
+from tdmpc2.envs.isaaclab import make_env as make_isaaclab_env
 
 def missing_dependencies(task):
     raise ValueError(f'Missing dependencies for task {task}; install dependencies to use this environment.')
@@ -30,7 +32,7 @@ try:
 except:
     make_mujoco_env = missing_dependencies
 try:
-    from dstl.envs.isaaclab import make_env as make_isaaclab_env
+    from tdmpc2.envs.isaaclab import make_env as make_isaaclab_env
 except:
     make_isaaclab_env = missing_dependencies
 
@@ -59,7 +61,7 @@ def make_multitask_env(cfg):
     return env
     
 
-def make_env(cfg, env_cfg=None):
+def make_env(cfg):
     """
     Make an environment for TD-MPC2 experiments. Optionally provide an environment configuration (for IsaacLab envs).
     """
@@ -73,36 +75,36 @@ def make_env(cfg, env_cfg=None):
     else:
         env = None
 
-        if env_cfg is not None: # We've passed an IsaacLab env_cfg
-            env = make_isaaclab_env(cfg, env_cfg)
-            obs_format = cfg.get("obs")
-            if type(env.observation_space) == type(gym.spaces.Dict(spaces={})):
-                cfg.obs_shape = {obs_format: env.observation_space.spaces[obs_format].shape}
-            # If env observation space is a Box, return a dict with just {`obs_type`:`shape`}
-            elif type(env.observation_space) == type(gym.spaces.Box(low=0, high=1)):
-                cfg.obs_shape = {obs_format: env.observation_space.shape}
-            cfg.state_dim = env_cfg.state_space
-            cfg.action_dim = env.action_space.shape[1]
-            cfg.episode_length = env.unwrapped.max_episode_length
-            cfg.seed_steps = max(1000, 5 * cfg.episode_length)
-            cfg.num_envs = env.unwrapped.num_envs
-            env = TensorWrapper(env)
+        # if env_cfg is not None: # We've passed an IsaacLab task
+        #     env = make_isaaclab_env(cfg)
+        #     obs_format = cfg.get("obs")
+        #     if type(env.observation_space) == type(gym.spaces.Dict(spaces={})):
+        #         cfg.obs_shape = {obs_format: env.observation_space.spaces[obs_format].shape}
+        #     # If env observation space is a Box, return a dict with just {`obs_type`:`shape`}
+        #     elif type(env.observation_space) == type(gym.spaces.Box(low=0, high=1)):
+        #         cfg.obs_shape = {obs_format: env.observation_space.shape}
+        #     cfg.action_dim = env.action_space.shape[1]
+        #     cfg.episode_length = env.unwrapped.max_episode_length
+        #     cfg.seed_steps = max(1000, 5 * cfg.episode_length)
+        #     env = TensorWrapper(env)
 
-        else: # Original TD-MPC2
-            for fn in [make_dm_control_env, make_maniskill_env, make_metaworld_env, make_myosuite_env, make_mujoco_env]:
-                try:
-                    env = fn(cfg)
-                except ValueError:
-                    pass
-            if env is None:
-                raise ValueError(f'Failed to make environment "{cfg.task}": please verify that dependencies are installed and that the task exists.')
-            env = TensorWrapper(env)
-            try: # Dict
-                cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
-            except: # Box
-                cfg.obs_shape = {cfg.get('obs', 'state'): env.observation_space.shape}
-            cfg.action_dim = env.action_space.shape[0]
-            cfg.episode_length = env.max_episode_steps
-            cfg.seed_steps = max(1000, 5*cfg.episode_length)
+        # else: # Original TD-MPC2
+        # for fn in [make_dm_control_env, make_maniskill_env, make_metaworld_env, make_myosuite_env, make_mujoco_env, make_isaaclab_env]:
+        #     try:
+        #         env = fn(cfg)
+        #     except ValueError:
+        #         pass
+        env = make_isaaclab_env(cfg)
+        if env is None:
+            raise ValueError(f'Failed to make environment "{cfg.task}": please verify that dependencies are installed and that the task exists.')
+        env = TensorWrapper(env)
+        try: # Dict
+            cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
+        except: # Box
+            cfg.obs_shape = {cfg.get('obs', 'state'): env.observation_space.shape}
+        cfg.action_dim = env.action_space.shape[0]
+        cfg.state_dim = env.state_dim
+        cfg.episode_length = env.max_episode_steps
+        cfg.seed_steps = max(1000, 5*cfg.episode_length)
 
     return env

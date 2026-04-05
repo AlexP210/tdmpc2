@@ -10,14 +10,17 @@ import torch
 import hydra
 from termcolor import colored
 
-from dstl.common.parser import parse_cfg
-from dstl.common.seed import set_seed
-from dstl.common.buffer import Buffer
-from dstl.envs import make_env
-from dstl import DSTL
-from dstl.trainer.offline_trainer import OfflineTrainer
-from dstl.trainer.online_trainer import OnlineTrainer
-from dstl.common.logger import Logger
+from tdmpc2.common.parser import parse_cfg
+from tdmpc2.common.seed import set_seed
+from tdmpc2.common.buffer import Buffer
+from tdmpc2.envs import make_env
+from agent import TDMPC2
+from tdmpc2.trainer.offline_trainer import OfflineTrainer
+from tdmpc2.trainer.online_trainer import OnlineTrainer
+from tdmpc2.common.logger import Logger
+
+from isaaclab.utils.io import dump_yaml
+from datetime import datetime
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
@@ -47,13 +50,25 @@ def train(cfg: dict):
 	assert cfg.steps > 0, 'Must train for at least 1 step.'
 	cfg = parse_cfg(cfg)
 	set_seed(cfg.seed)
+
+	env = make_env(cfg)
+	output_dir = os.path.join(cfg.output_dir, f"{cfg.exp_name}", cfg.task, str(cfg.seed), datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+	output_dir = os.path.abspath(output_dir)
+	print(f"[INFO] Logging experiment in directory: {output_dir}")
+	cfg.work_dir = output_dir
+	env.unwrapped.cfg.log_dir = output_dir
+
+    # dump the configuration into log-directory
+	dump_yaml(os.path.join(output_dir, "params", "env.yaml"), env.unwrapped.cfg)
+	dump_yaml(os.path.join(output_dir, "params", "agent.yaml"), cfg)
+	
 	print(colored('Work dir:', 'yellow', attrs=['bold']), cfg.work_dir)
 
 	trainer_cls = OfflineTrainer if cfg.multitask else OnlineTrainer
 	trainer = trainer_cls(
 		cfg=cfg,
-		env=make_env(cfg),
-		agent=DSTL(cfg),
+		env=env,
+		agent=TDMPC2(cfg),
 		buffer=Buffer(cfg),
 		logger=Logger(cfg),
 	)

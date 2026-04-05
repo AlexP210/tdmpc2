@@ -9,10 +9,10 @@ import numpy as np
 import torch
 from termcolor import colored
 
-from dstl.common.parser import parse_cfg
-from dstl.common.seed import set_seed
-from dstl.envs import make_env
-from dstl.agent import DSTL
+from tdmpc2.common.parser import parse_cfg
+from tdmpc2.common.seed import set_seed
+from tdmpc2.envs import make_env
+from tdmpc2.tdmpc2 import TDMPC2
 
 torch.backends.cudnn.benchmark = True
 
