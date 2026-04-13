@@ -84,8 +84,9 @@ class Pixels(gym.Wrapper):
         self.env = env
         self.observation_space = env.observation_space
         assert "rgb" in self.observation_space.keys()
+        previous_shape = self.observation_space["rgb"].shape
         self.observation_space["rgb"] = gym.spaces.Box(
-            low=0, high=255, shape=(num_frames*3, 64, 64), dtype=np.uint8)
+            low=0, high=255, shape=(num_frames*previous_shape[0], *previous_shape[1:]), dtype=np.uint8)
         self._frames = deque([], maxlen=num_frames)
 
     def _get_visual_obs(self, obs, is_reset=False):

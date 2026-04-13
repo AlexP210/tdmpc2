@@ -322,11 +322,12 @@ def conv(in_shape, num_channels, latent_dim=512, act=None):
     Basic convolutional encoder for TD-MPC2 with raw image observations.
     4 layers of convolution with ReLU activations, followed by a linear layer.
     """
-    assert in_shape[-1] == 64 # assumes rgb observations to be 64x64
+    # assert in_shape[-1] == 64 # assumes rgb observations to be 64x64
     layers = [
         ShiftAug(), PixelPreprocess(),
         nn.Conv2d(in_shape[0], num_channels, 7, stride=2), nn.ReLU(inplace=False),
         nn.Conv2d(num_channels, num_channels, 5, stride=2), nn.ReLU(inplace=False),
+        nn.Conv2d(num_channels, num_channels, 3, stride=2), nn.ReLU(inplace=False),
         nn.Conv2d(num_channels, num_channels, 3, stride=2), nn.ReLU(inplace=False),
         nn.Conv2d(num_channels, num_channels, 3, stride=1), nn.Flatten(),
         nn.Linear(in_features=512, out_features=latent_dim)

@@ -89,7 +89,7 @@ simnorm_dim: 8
 wandb_project: Task-Specialized-Distillation
 wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
-enable_wandb: false
+enable_wandb: true
 save_csv: true
 save_training_data: 0.5
 checkpoint_interval: 50_000
