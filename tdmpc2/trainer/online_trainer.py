@@ -28,21 +28,24 @@ class OnlineTrainer(Trainer):
         )
 
     def eval(self):
+        print("IN EVAL")
         """Evaluate a TD-MPC2 agent."""
         # Store the total reward, episode success, episode length for each of the eval episodes
         ep_rewards, ep_successes, ep_lengths = [], [], []
 
         # Run all environments `self.cfg_eval_episodes` times
         for i in range(self.cfg.eval_episodes):
+            print("ABOUT TO RESET")
             (parallel_obs, parallel_info), parallel_done, parallel_ep_reward, t = (
                 self.env.reset(),
                 torch.full(size=(self.cfg.num_envs,1),fill_value=False),
                 torch.full(size=(self.cfg.num_envs,1),fill_value=0.0),
                 0,
             )
+            print("DID RESET")
             if self.cfg.save_video:
                 self.logger.video.init(self.env, enabled=(i == 0))
-
+            print("INITIALIZED VIDEO")
             while not parallel_done.all():
                 # Find which ones are not done yet
                 not_done_envs = torch.nonzero(~parallel_done, as_tuple=True)[0].tolist()
@@ -52,10 +55,11 @@ class OnlineTrainer(Trainer):
                 parallel_actions = torch.zeros(
                     size=(self.cfg.num_envs, self.cfg.action_dim)
                 )
+                print("ABOUT TO COMPUTE ACTIONS")
                 for env_id in not_done_envs:
                     obs = TensorDict({obs_type: parallel_obs[obs_type][env_id] for obs_type in self.cfg.obs})
                     parallel_actions[env_id], _ = self.agent.act(obs, t0=t == 0, eval_mode=True)
-                
+                print("COMPUTED ACTIONS")
                 # Apply the actions for all of them (only non-zero for those that are not done)
                 (
                     parallel_obs,
@@ -64,7 +68,7 @@ class OnlineTrainer(Trainer):
                     parallel_truncated,
                     info,
                 ) = self.env.step(parallel_actions)
-
+                print("STEPPED ENVIRONMENT")
                 # For each env that was just updated, add the reward
                 for env_id in not_done_envs:
                     parallel_ep_reward[env_id] += parallel_reward[env_id].cpu()
