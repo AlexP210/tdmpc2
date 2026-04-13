@@ -53,7 +53,8 @@ class OnlineTrainer(Trainer):
                     size=(self.cfg.num_envs, self.cfg.action_dim)
                 )
                 for env_id in not_done_envs:
-                    parallel_actions[env_id], _ = self.agent.act(parallel_obs[env_id], t0=t == 0, eval_mode=True)
+                    obs = TensorDict({obs_type: parallel_obs[obs_type][env_id] for obs_type in self.cfg.obs})
+                    parallel_actions[env_id], _ = self.agent.act(obs, t0=t == 0, eval_mode=True)
                 
                 # Apply the actions for all of them (only non-zero for those that are not done)
                 (
@@ -66,7 +67,7 @@ class OnlineTrainer(Trainer):
 
                 # For each env that was just updated, add the reward
                 for env_id in not_done_envs:
-                    parallel_ep_reward[env_id] += parallel_reward[env_id]
+                    parallel_ep_reward[env_id] += parallel_reward[env_id].cpu()
                     t += 1
 
                 # Record a frame of video
@@ -76,9 +77,9 @@ class OnlineTrainer(Trainer):
                 # Find which envs are done
                 parallel_done = parallel_terminated | parallel_truncated
             # Episode is done, average the total reward, episode success and episode length across all envs
-            ep_rewards.append(parallel_ep_reward.mean())
-            ep_successes.append(info["successes"].float().mean())
-            ep_lengths.append(info["episode_lengths"].float().mean())
+            ep_rewards.append(parallel_ep_reward.mean().cpu())
+            ep_successes.append(info["successes"].float().mean().cpu())
+            ep_lengths.append(info["episode_lengths"].float().mean().cpu())
 
             # Save the video
             if self.cfg.save_video:
@@ -112,7 +113,7 @@ class OnlineTrainer(Trainer):
             terminated=terminated.unsqueeze(0),
             batch_size=(1,),
         )
-        return td
+        return td.cpu()
 
     def train(self):
         """Train a TD-MPC2 agent."""
@@ -199,8 +200,12 @@ class OnlineTrainer(Trainer):
                 # Reset the environments
                 obs, info = self.env.reset()
                 state = info["state"]
+                
                 for env_id in range(self.cfg.num_envs):
-                    first_obs = obs[env_id]
+                    first_obs = TensorDict({
+                        obs_type: obs[obs_type][env_id]
+                        for obs_type in self.cfg.obs
+                    })
                     first_state = state[env_id]
                     self._tds_for_each_env[env_id].append(self.to_td(first_obs, first_state))
 
@@ -229,15 +234,19 @@ class OnlineTrainer(Trainer):
                     transitions[env_id] = [last_obs, a, last_state]
 
             # Step the envs with the actions
-            obs, reward, terminated, truncated, info = self.env.step(actions)
+            current_obs, reward, terminated, truncated, info = self.env.step(actions)
             state = info["state"]
             done = terminated | truncated
 
             # Turn the transition to a tensordict and add to the transition list
             for env_id in not_done_envs:
+                obs = TensorDict({
+                    obs_type: current_obs[obs_type][env_id]
+                    for obs_type in self.cfg.obs
+                })
                 self._tds_for_each_env[env_id].append(
                     self.to_td(
-                        obs[env_id], state[env_id], actions[env_id], reward[env_id], terminated[env_id]
+                        obs, state[env_id], actions[env_id], reward[env_id], terminated[env_id]
                     )
                 )
                 self._step += 1
@@ -245,7 +254,7 @@ class OnlineTrainer(Trainer):
                 # If we're saving training data, then log the transition
                 if self.logger.save_training_data > 0:
                     o, a, s = transitions[env_id]
-                    self.logger.log_transition(o, a, reward[env_id], obs[env_id], terminated[env_id], truncated[env_id], s, state[env_id])
+                    self.logger.log_transition(o, a, reward[env_id], obs, terminated[env_id], truncated[env_id], s, state[env_id])
 
             # Update agent if we've collected enough for pretraining 
             # and have at least one episode in the buffer

@@ -13,8 +13,6 @@ class IsaacLabWrapper(gym.Wrapper):
         self.env = env
         self.cfg = cfg
         self.task_name = task_name
-        self.max_episode_steps = (env.unwrapped.cfg.episode_length_s // env.unwrapped.cfg.sim.dt) // env.unwrapped.cfg.decimation
-        self.state_dim = env.unwrapped.cfg.state_space
 
     def reset(self, env_id=None):
         if env_id is None:
@@ -28,16 +26,11 @@ class IsaacLabWrapper(gym.Wrapper):
                 )
             )
             obs = self.env.unwrapped._get_observations()
-        if type(obs) == type(dict()):
-            obs = obs[self.cfg.obs]
-        return self.obs_to_cpu(obs), self.info_to_cpu(info)
+        return obs, info
 
     def step(self, action):
         action = torch.from_numpy(action)
         obs, reward, terminated, truncated, info = self.env.step(action)
-         # If the env is returning us a dict
-        if type(obs) == type(dict()):
-            obs = obs[self.cfg.obs]
 
         if "Manager" in self.task_name:
             # For the manager-based envs, we need to get the termination and truncation
@@ -57,11 +50,11 @@ class IsaacLabWrapper(gym.Wrapper):
             info["successes"] = successes
             info["episode_lengths"] = episode_length
         return_value = (
-            self.obs_to_cpu(obs),
-            reward.cpu(),
-            terminated.cpu(),
-            truncated.cpu(),
-            self.info_to_cpu(info),
+            obs,
+            reward,
+            terminated,
+            truncated,
+            info,
         )
         return return_value
 
@@ -89,18 +82,20 @@ class Pixels(gym.Wrapper):
         super().__init__(env)
         self.cfg = cfg
         self.env = env
-        self.max_episode_steps = env.max_episode_steps
-        self.state_dim = env.state_dim
-        self.observation_space = gym.spaces.Box(
+        self.observation_space = env.observation_space
+        assert "rgb" in self.observation_space.keys()
+        self.observation_space["rgb"] = gym.spaces.Box(
             low=0, high=255, shape=(num_frames*3, 64, 64), dtype=np.uint8)
         self._frames = deque([], maxlen=num_frames)
 
-    def _get_visual_obs(self, frame, is_reset=False):
+    def _get_visual_obs(self, obs, is_reset=False):
+        frame = obs["rgb"]
         num_frames = self._frames.maxlen if is_reset else 1
         for _ in range(num_frames):
             self._frames.append(frame)
         past_n_frames = torch.concatenate(tuple(self._frames), axis=1)
-        return past_n_frames
+        obs["rgb"] = past_n_frames
+        return obs
 
     def reset(self, env_id=None):
         obs, info = self.env.reset(env_id=env_id)
@@ -141,6 +136,6 @@ def make_env(cfg):
 
     env = gym.make(cfg.task, cfg=env_cfg, render_mode="rgb_array")
     env = IsaacLabWrapper(env, cfg, cfg.task)
-    if cfg.obs == "rgb":
+    if "rgb" in cfg.obs:
         env = Pixels(cfg=cfg, env=env)
     return env

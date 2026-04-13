@@ -1,6 +1,8 @@
 # environment
 task: BoxPlace-Direct-v0
-obs: rgb
+obs:
+  - rgb
+  - state
 episodic: true
 device: cuda:0
 
@@ -10,7 +12,7 @@ eval_episodes: 1
 eval_freq: 50000
 
 # training
-steps: 1_000_000
+steps: 2_000_000
 batch_size: 256
 reward_coef: 0.1
 value_coef: 0.1
@@ -72,6 +74,11 @@ num_enc_layers: 2
 enc_dim: 256
 num_channels: 32
 mlp_dim: 512
+# Dimensionality for each sensing modality
+latent_dims:
+  rgb: 256
+  state: 256
+# Dimensionality of the final latent
 latent_dim: 512
 task_dim: 96
 num_q: 5
@@ -79,12 +86,12 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: Distilling-Planners
+wandb_project: Task-Specialized-Distillation
 wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
 enable_wandb: false
 save_csv: true
-save_training_data: 0.2
+save_training_data: 0.5
 checkpoint_interval: 50_000
 
 # misc
@@ -111,6 +118,6 @@ bin_size: ???
 # IsaacLab Environment
 enable_cameras: True
 num_envs: 128
-visualize: True
+visualize: False
 task_index: null
 output_dir: "/data/AlexPleava/outputs"

@@ -123,17 +123,31 @@ class Logger:
 		self.save_training_data = cfg.save_training_data
 		self._training_dataset = None
 		if self.save_training_data > 0:
-			obs_dim = self.cfg.obs_shape[self.cfg.obs]
+			obs_dim = {
+				obs_type: self.cfg.obs_shape[obs_type]
+				for obs_type in self.cfg.obs
+			}
 			save_dir = os.path.join(self._log_dir, "data")
 			make_dir(save_dir)
 			save_path = os.path.join(save_dir, "training.h5")
 			self._training_dataset = self.create_transition_dataset(path=save_path)
 			self._transition_buffer_size = 1024
 			self._data_save_index = 0
-			self.o_buffer = np.empty(shape=(self._transition_buffer_size, *obs_dim), dtype=float)
+			obs_dim = {
+				obs_type: self.cfg.obs_shape[obs_type]
+				for obs_type in self.cfg.obs
+			}
+
+			self.o_buffers = {
+				obs_type: np.empty(shape=(self._transition_buffer_size, *obs_dim[obs_type]), dtype=float)
+				for obs_type in self.cfg.obs
+			}
 			self.a_buffer = np.empty(shape=(self._transition_buffer_size, cfg.action_dim), dtype=float)
 			self.r_buffer = np.empty(shape=(self._transition_buffer_size, 1), dtype=float)
-			self.oprime_buffer = np.empty(shape=(self._transition_buffer_size, *obs_dim), dtype=float)
+			self.oprime_buffers = {
+				obs_type: np.empty(shape=(self._transition_buffer_size, *obs_dim[obs_type]), dtype=float)
+				for obs_type in self.cfg.obs
+			}
 			self.termination_buffer = np.empty(shape=(self._transition_buffer_size, 1), dtype=bool)
 			self.truncation_buffer = np.empty(shape=(self._transition_buffer_size, 1), dtype=bool)
 			self.state_buffer = np.empty(shape=(self._transition_buffer_size, self.cfg.state_dim), dtype=float)
@@ -272,16 +286,22 @@ class Logger:
 
 	def create_transition_dataset(self, path):
 		dataset = h5py.File(path, "w")
-		obs_dim = self.cfg.obs_shape[self.cfg.obs]
-		o_dataset = dataset.create_dataset(
-			name="o", 
-			shape=(self.cfg.steps, *obs_dim),
-			maxshape=(None, *obs_dim),
-			chunks=(1024, *obs_dim),
-			dtype="float32",
-			compression="gzip",
-			compression_opts=4,
-		)
+		obs_dim = {
+			obs_type: self.cfg.obs_shape[obs_type]
+			for obs_type in self.cfg.obs
+		}
+		o_datasets = {
+			obs_type: dataset.create_dataset(
+				name=f"o_{obs_type}", 
+				shape=(self.cfg.steps, *obs_dim[obs_type]),
+				maxshape=(None, *obs_dim[obs_type]),
+				chunks=(1024, *obs_dim[obs_type]),
+				dtype="float32",
+				compression="gzip",
+				compression_opts=4,
+			)
+			for obs_type in self.cfg.obs
+		}
 		a_dataset = dataset.create_dataset(
 			name="a", 
 			shape=(self.cfg.steps, self.cfg.action_dim),
@@ -300,15 +320,18 @@ class Logger:
 			compression="gzip",
 			compression_opts=4,
 		)
-		oprime_dataset = dataset.create_dataset(
-			name="oprime", 
-			shape=(self.cfg.steps, *obs_dim),
-			maxshape=(None, *obs_dim),
-			chunks=(1024, *obs_dim),
-			dtype="float32",
-			compression="gzip",
-			compression_opts=4,
-		)
+		oprime_datasets = {
+			obs_type: dataset.create_dataset(
+				name=f"oprime_{obs_type}", 
+				shape=(self.cfg.steps, *obs_dim[obs_type]),
+				maxshape=(None, *obs_dim[obs_type]),
+				chunks=(1024, *obs_dim[obs_type]),
+				dtype="float32",
+				compression="gzip",
+				compression_opts=4,
+			)
+			for obs_type in self.cfg.obs
+		}
 		terminated_dataset = dataset.create_dataset(
 			name="terminated", 
 			shape=(self.cfg.steps, 1),
@@ -351,7 +374,7 @@ class Logger:
 		return dataset
 
 	def _ensure_capacity_for_transition_data(self):
-		if self._transitions_collected + self._transitions_buffered < self._training_dataset["o"].shape[0]:
+		if self._transitions_collected + self._transitions_buffered < self._training_dataset["s"].shape[0]:
 			return
 
 		# grow geometrically
@@ -366,10 +389,11 @@ class Logger:
 		start = self._transitions_collected
 		end = start + self._transitions_buffered
 		self._ensure_capacity_for_transition_data()
-		self._training_dataset["o"][start:end] = self.o_buffer[:self._transitions_buffered]
+		for obs_type in self.cfg.obs:
+			self._training_dataset[f"o_{obs_type}"][start:end] = self.o_buffers[obs_type][:self._transitions_buffered]
+			self._training_dataset[f"oprime_{obs_type}"][start:end] = self.oprime_buffers[obs_type][:self._transitions_buffered]
 		self._training_dataset["a"][start:end] = self.a_buffer[:self._transitions_buffered]
 		self._training_dataset["r"][start:end] = self.r_buffer[:self._transitions_buffered]
-		self._training_dataset["oprime"][start:end] = self.oprime_buffer[:self._transitions_buffered]
 		self._training_dataset["terminated"][start:end] = self.termination_buffer[:self._transitions_buffered]
 		self._training_dataset["truncated"][start:end] = self.truncation_buffer[:self._transitions_buffered]
 		self._training_dataset["state"][start:end] = self.state_buffer[:self._transitions_buffered]
@@ -379,10 +403,11 @@ class Logger:
 
 	def log_transition(self, o, a, r, o_prime, terminated, truncated, s, s_prime):
 		if np.random.rand() <= self.save_training_data:
-			self.o_buffer[self._transitions_buffered] = o.detach().cpu().numpy()
+			for obs_type in self.cfg.obs:
+				self.o_buffers[obs_type][self._transitions_buffered] = o[obs_type].detach().cpu().numpy()
+				self.oprime_buffers[obs_type][self._transitions_buffered] = o_prime[obs_type].detach().cpu().numpy()
 			self.a_buffer[self._transitions_buffered] = a.detach().cpu().numpy()
 			self.r_buffer[self._transitions_buffered] = r.detach().cpu().numpy()
-			self.oprime_buffer[self._transitions_buffered] = o_prime.detach().cpu().numpy()
 			self.termination_buffer[self._transitions_buffered] = terminated.detach().cpu().numpy()
 			self.truncation_buffer[self._transitions_buffered] = truncated.detach().cpu().numpy()
 			self.state_buffer[self._transitions_buffered] = s.detach().cpu().numpy()

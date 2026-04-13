@@ -340,13 +340,17 @@ def enc(cfg, out={}):
     """
     Returns a dictionary of encoders for each observation in the dict.
     """
-    for k in cfg.obs_shape.keys():
-        if k == 'state':
-            out[k] = mlp(cfg.obs_shape[k][0] + cfg.task_dim, max(cfg.num_enc_layers-1, 1)*[cfg.enc_dim], cfg.latent_dim, act=SimNorm(cfg))
+    concatenated_dim = 0
+    for k in cfg.obs:
+        if k == 'state':            
+            out[k] = mlp(cfg.obs_shape[k][0] + cfg.task_dim, max(cfg.num_enc_layers-1, 1)*[cfg.enc_dim], cfg.latent_dims['state'], act=SimNorm(cfg))
+            concatenated_dim += cfg.latent_dims['state']
         elif k == 'rgb':
-            out[k] = conv(cfg.obs_shape[k], cfg.num_channels, cfg.latent_dim, act=SimNorm(cfg))
+            out[k] = conv(cfg.obs_shape[k], cfg.num_channels, cfg.latent_dims['rgb'], act=SimNorm(cfg))
+            concatenated_dim += cfg.latent_dims['rgb']
         else:
             raise NotImplementedError(f"Encoder for observation type {k} not implemented.")
+    out["final"] =  mlp(concatenated_dim, [cfg.enc_dim], cfg.latent_dim, act=SimNorm(cfg))
     return nn.ModuleDict(out)
 
 

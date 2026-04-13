@@ -101,10 +101,10 @@ def make_env(cfg):
         try: # Dict
             cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
         except: # Box
-            cfg.obs_shape = {cfg.get('obs', 'state'): env.observation_space.shape}
-        cfg.action_dim = env.action_space.shape[-1]
-        cfg.state_dim = env.state_dim
-        cfg.episode_length = env.max_episode_steps
+            cfg.obs_shape = {k: v.shape for k, v in env.observation_space.items()}
+        cfg.action_dim = env.unwrapped.action_space.shape[-1]
+        cfg.state_dim = env.unwrapped.state_dim
+        cfg.episode_length = env.unwrapped.max_episode_steps
         cfg.seed_steps = max(1000, 5*cfg.episode_length)
 
     return env

@@ -101,9 +101,13 @@ class WorldModel(nn.Module):
         Encodes an observation into its latent representation.
         This implementation assumes a single state-based observation.
         """
-        if self.cfg.obs == 'rgb' and obs.ndim == 5:
-            return torch.stack([self._encoder[self.cfg.obs](o) for o in obs])
-        return self._encoder[self.cfg.obs](obs)
+        latents = []
+        for obs_type in self.cfg.obs:
+            latents.append(self._encoder[obs_type](obs[obs_type]))
+        # if self.cfg.obs == 'rgb' and obs.ndim == 5:
+        #     return torch.stack([self._encoder[self.cfg.obs](o) for o in obs])
+        concatenated_latent=torch.concatenate(latents, dim=-1)
+        return self._encoder["final"](concatenated_latent)
 
     def next(self, z, a, return_epistemic=False):
         """
