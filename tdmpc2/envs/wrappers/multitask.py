@@ -55,3 +55,16 @@ class MultitaskWrapper(gym.Wrapper):
 	def step(self, action):
 		obs, reward, done, info = self.env.step(action[:self.env.action_space.shape[0]])
 		return self._pad_obs(obs), reward, done, info
+
+	def __getattr__(self, name):
+		"""
+		If this env does not have the attribute, then we try to 
+		recursively access that attribute from inner envs.
+		"""
+		env = self.env
+		while not hasattr(env, name):
+			if hasattr(env, 'env'): # while the env is still wrapped,
+				env = env.env
+			else: # reached the innermost env and still didn't find it.
+				raise AttributeError(f'{env} has no attribute {name}.')
+		return getattr(env, name) # reached if env **has** attribute name.

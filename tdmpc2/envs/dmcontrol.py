@@ -4,13 +4,13 @@ import gymnasium as gym
 import numpy as np
 import torch
 
-from envs.tasks import cheetah, walker, hopper, reacher, ball_in_cup, pendulum, fish
+from tdmpc2.envs.tasks import cheetah, walker, hopper, reacher, ball_in_cup, pendulum, fish
 from dm_control import suite
 suite.ALL_TASKS = suite.ALL_TASKS + suite._get_tasks('custom')
 suite.TASKS_BY_DOMAIN = suite._get_tasks_by_domain(suite.ALL_TASKS)
 from dm_control.suite.wrappers import action_scale
 
-from envs.wrappers.timeout import Timeout
+from tdmpc2.envs.wrappers.timeout import Timeout
 
 
 def get_obs_shape(env):
@@ -24,7 +24,7 @@ def get_obs_shape(env):
 	return (int(np.sum(obs_shp)),)
 
 
-class DMControlWrapper:
+class DMControlWrapper(gym.Wrapper):
 	def __init__(self, env, domain):
 		self.env = env
 		self.camera_id = 2 if domain == 'quadruped' else 0
@@ -62,6 +62,19 @@ class DMControlWrapper:
 	def render(self, width=384, height=384, camera_id=None):
 		return self.env.physics.render(height, width, camera_id or self.camera_id)
 
+	def __getattr__(self, name):
+		"""
+		If this env does not have the attribute, then we try to 
+		recursively access that attribute from inner envs.
+		"""
+		env = self.env
+		while not hasattr(env, name):
+			if hasattr(env, 'env'): # while the env is still wrapped,
+				env = env.env
+			else: # reached the innermost env and still didn't find it.
+				raise AttributeError(f'{env} has no attribute {name}.')
+		return getattr(env, name) # reached if env **has** attribute name.
+
 
 class Pixels(gym.Wrapper):
 	def __init__(self, env, cfg, num_frames=3, size=64):
@@ -87,7 +100,19 @@ class Pixels(gym.Wrapper):
 	def step(self, action):
 		_, reward, done, info = self.env.step(action)
 		return self._get_obs(), reward, done, info
-
+	
+	def __getattr__(self, name):
+		"""
+		If this env does not have the attribute, then we try to 
+		recursively access that attribute from inner envs.
+		"""
+		env = self.env
+		while not hasattr(env, name):
+			if hasattr(env, 'env'): # while the env is still wrapped,
+				env = env.env
+			else: # reached the innermost env and still didn't find it.
+				raise AttributeError(f'{env} has no attribute {name}.')
+		return getattr(env, name) # reached if env **has** attribute name.
 
 def make_env(cfg):
 	"""

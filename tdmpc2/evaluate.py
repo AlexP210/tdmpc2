@@ -8,6 +8,7 @@ import imageio
 import numpy as np
 import torch
 from termcolor import colored
+import tqdm
 
 from common.parser import parse_cfg
 from common.seed import set_seed
@@ -68,11 +69,13 @@ def evaluate(cfg: dict):
 		os.makedirs(video_dir, exist_ok=True)
 	scores = []
 	tasks = cfg.tasks if cfg.multitask else [cfg.task]
-	for task_idx, task in enumerate(tasks):
+	task_list = list(enumerate(tasks))
+	task_list = [task_list[3],]
+	for task_idx, task in tqdm.tqdm(task_list, desc="Tasks"):
 		if not cfg.multitask:
 			task_idx = None
 		ep_rewards, ep_successes = [], []
-		for i in range(cfg.eval_episodes):
+		for i in tqdm.tqdm(range(cfg.eval_episodes), "Episodes"):
 			obs, done, ep_reward, t = env.reset(task_idx=task_idx), False, 0, 0
 			if cfg.save_video:
 				frames = [env.render()]

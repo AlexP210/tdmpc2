@@ -1,14 +1,15 @@
-defaults:
-    - override hydra/launcher: submitit_local
+# defaults:
+#     - override hydra/launcher: submitit_local
 
 # environment
-task: dog-run
+task: mt30
 obs: state
 episodic: false
+device: cuda:1
 
 # evaluation
-checkpoint: ???
-eval_episodes: 10
+checkpoint: /data/AlexPleava/TDMPC2/checkpoints/mt30-317M.pt
+eval_episodes: 5
 eval_freq: 50000
 
 # training
@@ -64,14 +65,14 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: ???
-wandb_entity: ???
+wandb_project: Distilling-Planners
+wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
 enable_wandb: true
 save_csv: true
 
 # misc
-compile: true
+compile: false
 save_video: true
 save_agent: true
 seed: 1
