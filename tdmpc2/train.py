@@ -14,7 +14,7 @@ from common.parser import parse_cfg
 from common.seed import set_seed
 from common.buffer import Buffer
 from envs import make_env
-from tdmpc2 import TDMPC2
+from tdmpc2_agent import TDMPC2
 from trainer.offline_trainer import OfflineTrainer
 from trainer.online_trainer import OnlineTrainer
 from common.logger import Logger
@@ -50,10 +50,13 @@ def train(cfg: dict):
 	print(colored('Work dir:', 'yellow', attrs=['bold']), cfg.work_dir)
 
 	trainer_cls = OfflineTrainer if cfg.multitask else OnlineTrainer
+	env=make_env(cfg)
+	agent = TDMPC2(cfg)
+	if cfg.checkpoint: agent.load(cfg.checkpoint)
 	trainer = trainer_cls(
 		cfg=cfg,
-		env=make_env(cfg),
-		agent=TDMPC2(cfg),
+		env=env,
+		agent=agent,
 		buffer=Buffer(cfg),
 		logger=Logger(cfg),
 	)

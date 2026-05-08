@@ -1,50 +1,37 @@
-# defaults:
-#     - override hydra/launcher: submitit_local
-
-# environment
 task: mt30
 obs: state
 episodic: false
 device: cuda:1
-
-# evaluation
 checkpoint: /data/AlexPleava/TDMPC2/checkpoints/mt30-317M.pt
 eval_episodes: 5
 eval_freq: 50000
-
-# training
-steps: 10_000_000
+steps: 10000000
 batch_size: 256
 reward_coef: 0.1
 value_coef: 0.1
 termination_coef: 1
 consistency_coef: 20
 rho: 0.5
-lr: 3e-4
+lr: 0.0003
 enc_lr_scale: 0.3
 grad_clip_norm: 20
 tau: 0.01
 discount_denom: 5
 discount_min: 0.95
 discount_max: 0.995
-buffer_size: 1_000_000
+buffer_size: 1000000
 exp_name: default
 data_dir: /data/AlexPleava/TDMPC2/datasets/mt30
 data_name: mt30-tdmpc2-cheetah-jump-training.pt
 eval_tasks:
-  - cheetah-jump
-# The below control how the state dict for a past checkpoint is loaded
-# You may want to not load the weights for certain modules and train
-# from scratch, or freeze certain modules.
+- cheetah-jump
 components_to_train_from_scratch:
-  - value
+- value
 components_to_freeze:
-  - encoder
-  - dynamics
-  - reward
-  - task
-
-# planning
+- encoder
+- dynamics
+- reward
+- task
 mpc: true
 iterations: 6
 num_samples: 512
@@ -54,18 +41,12 @@ horizon: 3
 min_std: 0.05
 max_std: 2
 temperature: 0.5
-
-# actor
 log_std_min: -10
 log_std_max: 2
-entropy_coef: 1e-4
-
-# critic
+entropy_coef: 0.0001
 num_bins: 101
 vmin: -10
-vmax: +10
-
-# architecture
+vmax: 10
 model_size: 317
 num_enc_layers: 5
 enc_dim: 4096
@@ -76,21 +57,15 @@ task_dim: 96
 num_q: 8
 dropout: 0.01
 simnorm_dim: 8
-
-# logging
 wandb_project: Task-Specialized-Distillation
 wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
-enable_wandb: true
+enable_wandb: false
 save_csv: true
-
-# misc
 compile: false
 save_video: true
 save_agent: true
 seed: 1
-
-# convenience
 work_dir: ???
 task_title: ???
 multitask: true

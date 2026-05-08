@@ -22,7 +22,8 @@ class OfflineTrainer(Trainer):
 	def eval(self):
 		"""Evaluate a TD-MPC2 agent."""
 		results = dict()
-		for task_idx in tqdm(range(len(self.cfg.tasks)), desc='Evaluating'):
+		eval_tasks_idxs = [self.cfg.tasks.index(e) for e in self.cfg.eval_tasks]
+		for task_idx in tqdm(eval_tasks_idxs, desc='Evaluating'):
 			ep_rewards, ep_successes = [], []
 			for _ in range(self.cfg.eval_episodes):
 				obs, done, ep_reward, t = self.env.reset(task_idx), False, 0, 0
@@ -41,7 +42,7 @@ class OfflineTrainer(Trainer):
 	
 	def _load_dataset(self):
 		"""Load dataset for offline training."""
-		fp = Path(os.path.join(self.cfg.data_dir, '*.pt'))
+		fp = Path(os.path.join(self.cfg.data_dir, self.cfg.data_name))
 		fps = sorted(glob(str(fp)))
 		assert len(fps) > 0, f'No data found at {fp}'
 		print(f'Found {len(fps)} files in {fp}')
@@ -50,16 +51,33 @@ class OfflineTrainer(Trainer):
 	
 		# Create buffer for sampling
 		_cfg = deepcopy(self.cfg)
-		_cfg.episode_length = 101 if self.cfg.task == 'mt80' else 501
-		_cfg.buffer_size = 550_450_000 if self.cfg.task == 'mt80' else 345_690_000
-		_cfg.steps = _cfg.buffer_size
-		self.buffer = Buffer(_cfg)
+		# _cfg.episode_length = 101 if self.cfg.task == 'mt80' else 501
+		# _cfg.buffer_size = 550_450_000 if self.cfg.task == 'mt80' else 345_690_000
+		# _cfg.steps = _cfg.buffer_size
+		# self.buffer = Buffer(_cfg)
+
+		# Do a pass through all files to find the episode length and number of samples for the dataset
+		_cfg.episode_length = None
+		_cfg.buffer_size = 0
 		for fp in tqdm(fps, desc='Loading data'):
 			td = torch.load(fp, weights_only=False)
-			assert td.shape[1] == _cfg.episode_length, \
-				f'Expected episode length {td.shape[1]} to match config episode length {_cfg.episode_length}, ' \
-				f'please double-check your config.'
+			if _cfg.episode_length is None:
+				_cfg.episode_length = td.shape[1]
+			elif _cfg.episode_length != td.shape[1]: 
+				raise ValueError(
+					f"Data files have incongurous episode lengths: {fps}"
+				)
+			_cfg.buffer_size += td.shape[0] * td.shape[1]
+
+		# Create the buffer to store the data
+		_cfg.steps = _cfg.buffer_size
+		self.buffer = Buffer(_cfg)
+
+		# Load the data
+		for fp in tqdm(fps, desc='Loading data'):
+			td = torch.load(fp, weights_only=False)
 			self.buffer.load(td)
+			
 		expected_episodes = _cfg.buffer_size // _cfg.episode_length
 		if self.buffer.num_eps != expected_episodes:
 			print(f'WARNING: buffer has {self.buffer.num_eps} episodes, expected {expected_episodes} episodes for {self.cfg.task} task set.')

@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn.functional as F
 
@@ -43,6 +45,15 @@ class TDMPC2(torch.nn.Module):
 			print('Compiling update function with torch.compile...')
 			self._update = torch.compile(self._update, mode="reduce-overhead")
 
+		self.component_to_module_names = {
+			"encoder": ["_encoder"],
+			"dynamics": ["_dynamics"],
+			"reward": ["_reward"],
+			"value": ["_Qs", "_target_Qs_params", "_detach_Qs_params", "_pi", "_termination"],
+			"task": ["_task_emb"]
+		}
+		self._freeze()
+
 	@property
 	def plan(self):
 		_plan_val = getattr(self, "_plan_val", None)
@@ -54,6 +65,12 @@ class TDMPC2(torch.nn.Module):
 			plan = self._plan
 		self._plan_val = plan
 		return self._plan_val
+	
+	def _freeze(self):
+		for component_to_freeze in self.cfg.components_to_freeze:
+			module_names_to_freeze = self.component_to_module_names[component_to_freeze]
+			for module_name in module_names_to_freeze:
+				getattr(self.model, module_name).requires_grad_(False)
 
 	def _get_discount(self, episode_length):
 		"""
@@ -92,7 +109,18 @@ class TDMPC2(torch.nn.Module):
 			state_dict = torch.load(fp, map_location=torch.get_default_device(), weights_only=False)
 		state_dict = state_dict["model"] if "model" in state_dict else state_dict
 		state_dict = api_model_conversion(self.model.state_dict(), state_dict)
-		self.model.load_state_dict(state_dict)
+		# Remove components of the state dict which we don't want to load
+		original_state_dict = copy.deepcopy(self.model.state_dict())
+		for component_to_train_from_scratch in self.cfg.components_to_train_from_scratch:
+			modules_to_not_load = self.component_to_module_names[component_to_train_from_scratch]
+			# For each key in the state dict, check if we should not load it
+			for key in state_dict.keys():
+				for module_to_not_load in modules_to_not_load:
+					if key.startswith(module_to_not_load):
+						state_dict[key] = original_state_dict[key]
+		self.model.load_state_dict(state_dict, strict=True)
+		self._freeze()
+
 		return
 
 	@torch.no_grad()
