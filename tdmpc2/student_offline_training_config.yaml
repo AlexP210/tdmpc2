@@ -2,18 +2,19 @@
 #     - override hydra/launcher: submitit_local
 
 # environment
-task: mt30
+task: cheetah-flip
 obs: state
 episodic: false
-device: cuda:1
+device: cuda:0
 
 # evaluation
-checkpoint: /data/AlexPleava/TDMPC2/checkpoints/mt30-317M.pt
+checkpoint: null
 eval_episodes: 5
-eval_freq: 50000
+eval_freq: 50_000
 
 # training
-steps: 10_000_000
+training_mode: offline
+steps: 1_000_000
 batch_size: 256
 reward_coef: 0.1
 value_coef: 0.1
@@ -30,19 +31,19 @@ discount_max: 0.995
 buffer_size: 1_000_000
 exp_name: default
 data_dir: /data/AlexPleava/TDMPC2/datasets/mt30
-data_name: mt30-tdmpc2-cheetah-jump-training.pt
+data_name: mt30-cheetah-flip-training.pt
 eval_tasks:
-  - cheetah-jump
+  - cheetah-flip
 # The below control how the state dict for a past checkpoint is loaded
 # You may want to not load the weights for certain modules and train
 # from scratch, or freeze certain modules.
-components_to_train_from_scratch:
-  - value
-components_to_freeze:
-  - encoder
-  - dynamics
-  - reward
-  - task
+  # - encoder
+  # - dynamics
+  # - value
+  # - reward
+  # - task
+components_to_train_from_scratch: []
+components_to_freeze: []
 
 # planning
 mpc: true
@@ -66,14 +67,14 @@ vmin: -10
 vmax: +10
 
 # architecture
-model_size: 317
-num_enc_layers: 5
-enc_dim: 4096
+model_size: 5
+num_enc_layers: 2
+enc_dim: 256
 num_channels: 32
-mlp_dim: 4096
-latent_dim: 1376
+mlp_dim: 512
+latent_dim: 512
 task_dim: 96
-num_q: 8
+num_q: 5
 dropout: 0.01
 simnorm_dim: 8
 
