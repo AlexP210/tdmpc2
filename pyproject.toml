@@ -16,8 +16,7 @@ dependencies = [
     "pyyaml",
 ]
 
+
 [tool.setuptools.packages.find]
 where = ["."]
-
-[tool.setuptools.package-data]
-tdmpc2 = ["config.yaml"]
+include = ["tdmpc2*"]
