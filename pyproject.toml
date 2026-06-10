@@ -9,13 +9,6 @@ description = "TDMPC2: Scalable Model-Based RL for Fast Online Adaptation"
 authors = [
     { name = "TD-MPC2 Authors", email = "tdmpc2.authors@fake-email.com" }
 ]
-dependencies = [
-    "torch>=1.8.0",
-    "numpy",
-    "gym",
-    "pyyaml",
-]
-
 
 [tool.setuptools.packages.find]
 where = ["."]
