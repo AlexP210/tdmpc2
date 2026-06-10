@@ -70,7 +70,8 @@ class TDMPC2(torch.nn.Module):
 		for component_to_freeze in self.cfg.components_to_freeze:
 			module_names_to_freeze = self.component_to_module_names[component_to_freeze]
 			for module_name in module_names_to_freeze:
-				getattr(self.model, module_name).requires_grad_(False)
+				module = getattr(self.model, module_name)
+				if module is not None: module.requires_grad_(False)
 
 	def _get_discount(self, episode_length):
 		"""
