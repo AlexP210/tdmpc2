@@ -1,5 +1,6 @@
 import os
 os.environ['MUJOCO_GL'] = os.getenv("MUJOCO_GL", 'egl')
+os.environ['PYOPENGL_PLATFORM'] = os.getenv("PYOPENGL_PLATFORM", 'egl')
 import warnings
 warnings.filterwarnings('ignore')
 
