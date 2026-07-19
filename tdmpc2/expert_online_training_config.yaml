@@ -79,6 +79,7 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
+run_name: ???
 wandb_project: Task-Specialized-Distillation
 wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
