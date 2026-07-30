@@ -67,19 +67,18 @@ vmin: -10
 vmax: +10
 
 # architecture
-model_size: 5
+model_size: null
 num_enc_layers: 2
 enc_dim: 256
 num_channels: 32
 mlp_dim: 512
-latent_dim: 512
+latent_dim: ???
 task_dim: 96
 num_q: 5
 dropout: 0.01
 simnorm_dim: 8
 
 # logging
-run_name: ???
 wandb_project: Task-Specialized-Distillation
 wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
