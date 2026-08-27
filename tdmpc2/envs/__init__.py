@@ -18,6 +18,10 @@ try:
 except:
 	make_maniskill_env = missing_dependencies
 try:
+	from tdmpc2.envs.custom_maniskill import make_env as make_custom_maniskill_env
+except:
+	make_custom_maniskill_env = missing_dependencies
+try:
 	from tdmpc2.envs.metaworld import make_env as make_metaworld_env
 except:
 	make_metaworld_env = missing_dependencies
@@ -65,7 +69,7 @@ def make_env(cfg):
 
 	else:
 		env = None
-		for fn in [make_dm_control_env, make_maniskill_env, make_metaworld_env, make_myosuite_env, make_mujoco_env]:
+		for fn in [make_dm_control_env, make_maniskill_env, make_custom_maniskill_env, make_metaworld_env, make_myosuite_env, make_mujoco_env]:
 			try:
 				env = fn(cfg)
 			except ValueError:

@@ -3,7 +3,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-import hydra
 from omegaconf import OmegaConf
 
 from tdmpc2.common import MODEL_SIZE, TASK_SET
@@ -54,7 +53,7 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 			pass
 
 	# Convenience
-	cfg.work_dir = Path(hydra.utils.get_original_cwd()) / 'logs' / cfg.task / str(cfg.seed) / cfg.exp_name
+	cfg.work_dir = Path(cfg.output_dir) / cfg.task / str(cfg.run_name) / cfg.exp_name
 	cfg.task_title = cfg.task.replace("-", " ").title()
 	cfg.bin_size = (cfg.vmax - cfg.vmin) / (cfg.num_bins-1) # Bin size for discrete regression
 

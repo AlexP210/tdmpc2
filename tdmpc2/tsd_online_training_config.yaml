@@ -2,18 +2,18 @@
 #     - override hydra/launcher: submitit_local
 
 # environment
-task: mt30
-obs: state
+task: place-sphere
+obs: rgb
 episodic: false
 device: cuda:1
 
 # evaluation
-checkpoint: /data/AlexPleava/TDMPC2/checkpoints/mt30-317M.pt
+checkpoint: ???
 eval_episodes: 5
-eval_freq: 50000
+eval_freq: 10000
 
 # training
-steps: 10_000_000
+steps: 1_000_000
 batch_size: 256
 reward_coef: 0.1
 value_coef: 0.1
