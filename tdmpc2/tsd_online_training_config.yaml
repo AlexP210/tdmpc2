@@ -2,14 +2,14 @@
 #     - override hydra/launcher: submitit_local
 
 # environment
-task: place-sphere
+task: push-cube
 obs: rgb
 episodic: false
-device: cuda:1
+device: cuda:0
 
 # DINO goal-image reward -- TEMPORARY (2026-08-26), see envs/dino_goal_reward.py.
 # Set dino_reward: false to restore the task's own dense reward.
-dino_reward: true
+dino_reward: false
 dino_reward_model: dinov3_vits16
 dino_reward_checkpoint: /data/AlexPleava/pretrained_checkpoints/dino/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
 dino_reward_resize: 224
@@ -81,7 +81,7 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: Distilling-Planners
+wandb_project: Task-Specialized-Distillation
 wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
 enable_wandb: true
