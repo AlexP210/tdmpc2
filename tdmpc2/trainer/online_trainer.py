@@ -5,6 +5,8 @@ import torch
 from tensordict.tensordict import TensorDict
 from trainer.base import Trainer
 
+CHECKPOINT_FREQ = 10_000  # gradient updates between periodic checkpoints
+
 
 class OnlineTrainer(Trainer):
 	"""Trainer class for single-task online TD-MPC2 training."""
@@ -13,6 +15,7 @@ class OnlineTrainer(Trainer):
 		super().__init__(*args, **kwargs)
 		self._step = 0
 		self._ep_idx = 0
+		self._grad_step = 0
 		self._start_time = time()
 
 	def common_metrics(self):
@@ -121,6 +124,14 @@ class OnlineTrainer(Trainer):
 				for _ in range(num_updates):
 					_train_metrics = self.agent.update(self.buffer)
 				train_metrics.update(_train_metrics)
+
+				# Periodic checkpoint, keyed on gradient updates rather than env steps since
+				# seed pretraining performs `seed_steps` updates in one shot.
+				prev_grad_step = self._grad_step
+				self._grad_step += num_updates
+				if self._grad_step // CHECKPOINT_FREQ > prev_grad_step // CHECKPOINT_FREQ:
+					checkpoint_step = (self._grad_step // CHECKPOINT_FREQ) * CHECKPOINT_FREQ
+					self.logger.save_agent(self.agent, identifier=f'epoch_{checkpoint_step}')
 
 			self._step += 1
 
