@@ -293,20 +293,20 @@ def make_env(cfg):
 		sim_backend=f"physx_cuda:{cfg.device.split(':')[1]}",
 	)
 
-	# TEMPORARY (2026-08-26): swap the task's dense reward for DINO-feature progress towards a
-	# per-episode goal image. Delete this block and `envs/dino_goal_reward.py` to revert.
+	# # TEMPORARY (2026-08-26): swap the task's dense reward for DINO-feature progress towards a
+	# # per-episode goal image. Delete this block and `envs/dino_goal_reward.py` to revert.
 	reward_wrappers = ()
-	if cfg.dino_reward:
-		assert cfg.task == 'push-cube', \
-			f'dino_reward only builds a goal image for push-cube, not {cfg.task}'
-		from tdmpc2.envs.dino_goal_reward import reward_wrappers as dino_reward_wrappers
-		reward_wrappers = dino_reward_wrappers(
-			cfg,
-			# the mirror env must match the training env exactly, or the goal image would be
-			# rendered through a different camera than the observations
-			env_factory=lambda: make_custom_maniskill_env(task_cfg['env'], **env_kwargs),
-			camera_uid=WRIST_CAMERA_UID,
-		)
+	# if cfg.dino_reward:
+	# 	assert cfg.task == 'push-cube', \
+	# 		f'dino_reward only builds a goal image for push-cube, not {cfg.task}'
+	# 	from tdmpc2.envs.dino_goal_reward import reward_wrappers as dino_reward_wrappers
+	# 	reward_wrappers = dino_reward_wrappers(
+	# 		cfg,
+	# 		# the mirror env must match the training env exactly, or the goal image would be
+	# 		# rendered through a different camera than the observations
+	# 		env_factory=lambda: make_custom_maniskill_env(task_cfg['env'], **env_kwargs),
+	# 		camera_uid=WRIST_CAMERA_UID,
+	# 	)
 
 	env = make_custom_maniskill_env(
 		task_cfg['env'], reward_wrappers=reward_wrappers, **env_kwargs
