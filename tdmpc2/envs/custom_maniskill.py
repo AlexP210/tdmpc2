@@ -54,7 +54,50 @@ CUSTOM_MANISKILL_TASKS = {
 	'push-cube': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos'),
 	'place-sphere': dict(env='PlaceSphere-v1.1', control_mode='pd_ee_delta_pos'),
 	'lift-peg-upright': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos'),
+	'pick-cube': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos'),
 }
+
+
+# The proprioceptive vector TD-MPC2 sees under `obs='rgb_state'`, per task.
+#
+# These MUST stay the same fields the DINO-based agents declare as PROPRIO_KEYS in their
+# datasets/<task>_dset.py, because that is the whole point of the mode: a TD-MPC2 baseline whose
+# non-visual input is the one the methods it is compared against get. Deliberately NOT ManiSkill's
+# flattened `obs_mode='state'` vector, which additionally carries obj_pose, tcp_to_obj_pos,
+# obj_to_goal_pos and is_grasped -- the privileged fields the PPO data-collection policy trains on,
+# and which would make a TD-MPC2 number incomparable to the world models'.
+#
+# Paths are relative to ManiSkill's observation dict, i.e. the agents' "obs/..." keys with the
+# prefix dropped, the same way env/maniskill_wrapper.py does with removeprefix("obs/").
+PROPRIO_KEYS = {
+	'push-cube':        ('agent/qpos', 'agent/qvel', 'extra/tcp_pose'),  # 9 + 9 + 7 = 25
+	'place-sphere':     ('agent/qpos', 'agent/qvel', 'extra/tcp_pose'),  # 25
+	'lift-peg-upright': ('agent/qpos', 'agent/qvel', 'extra/tcp_pose'),  # 25
+	# PickCube's `goal_site` is in ManiSkill's `_hidden_objects`, so the target is invisible in
+	# every camera frame and a grasped cube looks the same wherever the arm is. `goal_pos` is how
+	# the target reaches the model at all; the DINO agents carry the same 28 dims for that reason.
+	'pick-cube':        ('agent/qpos', 'agent/qvel', 'extra/tcp_pose', 'extra/goal_pos'),  # 28
+}
+
+
+SUPPORTED_OBS = ('state', 'rgb', 'rgb_state')
+"""What `cfg.obs` may be for these tasks.
+
+- `state`: ManiSkill's flattened privileged state vector.
+- `rgb`: the camera frame alone, channel-stacked by `Pixels`.
+- `rgb_state`: both, as a two-key dict -- the camera frame plus the same proprio vector the
+  DINO-based agents receive (see PROPRIO_KEYS). `WorldModel` encodes each stream and fuses them.
+"""
+
+VISUAL_OBS = ('rgb', 'rgb_state')
+"""The `cfg.obs` values that read a camera, and so need a resolved camera uid and frame stacking."""
+
+
+def _get_nested(obs, path):
+	"""One field of ManiSkill's nested observation dict (or observation space) by "a/b" path."""
+	for key in path.split('/'):
+		obs = obs[key]
+	return obs
 
 
 class CustomManiSkillWrapper(gym.Wrapper):
@@ -90,8 +133,28 @@ class CustomManiSkillWrapper(gym.Wrapper):
 		self._seed = cfg.get('seed', None)
 
 		base = env.unwrapped
-		self._camera_uid = self._resolve_camera_uid(env) if cfg.obs == 'rgb' else None
-		if self._camera_uid is not None:
+		self._camera_uid = self._resolve_camera_uid(env) if cfg.obs in VISUAL_OBS else None
+		# `rgb_state` keeps the proprio stream ManiSkill's rgb obs_mode already returns alongside
+		# the camera (agent/* and extra/*), which the plain `rgb` mode throws away.
+		self._proprio_keys = PROPRIO_KEYS[cfg.task] if cfg.obs == 'rgb_state' else None
+		if self._proprio_keys is not None:
+			height, width, channels = base.single_observation_space[
+				'sensor_data'][self._camera_uid]['rgb'].shape
+			# summed from the observation *space* rather than a probe reset: the widths are fixed
+			# when the scene is built, and this keeps __init__ free of a side-effecting reset
+			proprio_dim = sum(
+				int(np.prod(_get_nested(base.single_observation_space, key).shape))
+				for key in self._proprio_keys
+			)
+			# keys 'rgb' and 'state' because `layers.enc` builds one encoder per obs_shape key and
+			# knows those two names; `envs/__init__.py` turns this Dict into a two-key obs_shape.
+			self.observation_space = gym.spaces.Dict({
+				'rgb': gym.spaces.Box(
+					low=0, high=255, shape=(channels, height, width), dtype=np.uint8),
+				'state': gym.spaces.Box(
+					low=-np.inf, high=np.inf, shape=(proprio_dim,), dtype=np.float32),
+			})
+		elif self._camera_uid is not None:
 			height, width, channels = base.single_observation_space[
 				'sensor_data'][self._camera_uid]['rgb'].shape
 			self.observation_space = gym.spaces.Box(
@@ -127,14 +190,30 @@ class CustomManiSkillWrapper(gym.Wrapper):
 			f'{self.cfg.get("camera_view", "default")!r} configures.'
 		)
 
+	def _rgb(self, obs):
+		rgb = obs['sensor_data'][self._camera_uid]['rgb']
+		# (1, H, W, C) -> (C, H, W). The permute is never contiguous, so `contiguous()` is a
+		# real copy -- required rather than defensive: ManiSkill hands back its camera capture
+		# buffer itself and overwrites it in place on the next step, while TD-MPC2 keeps a
+		# whole episode of observations alive in `_tds`.
+		return rgb[0].permute(2, 0, 1).contiguous().cpu()
+
+	def _proprio(self, obs):
+		"""The PROPRIO_KEYS fields of one step, concatenated in order.
+
+		`clone()` for the same reason as `_rgb`: these are views into buffers the sim reuses, and
+		the trainer keeps a whole episode alive.
+		"""
+		return torch.cat(
+			[_get_nested(obs, key)[0].reshape(-1).float() for key in self._proprio_keys],
+			dim=-1,
+		).clone().cpu()
+
 	def _observation(self, obs):
+		if self._proprio_keys is not None:
+			return {'rgb': self._rgb(obs), 'state': self._proprio(obs)}
 		if self._camera_uid is not None:
-			rgb = obs['sensor_data'][self._camera_uid]['rgb']
-			# (1, H, W, C) -> (C, H, W). The permute is never contiguous, so `contiguous()` is a
-			# real copy -- required rather than defensive: ManiSkill hands back its camera capture
-			# buffer itself and overwrites it in place on the next step, while TD-MPC2 keeps a
-			# whole episode of observations alive in `_tds`.
-			return rgb[0].permute(2, 0, 1).contiguous().cpu()
+			return self._rgb(obs)
 		# ManiSkill allocates the flattened state fresh per step, but copy for the same reason:
 		# nothing here should depend on when the sim happens to reuse a buffer.
 		return obs[0].float().clone().cpu()
@@ -213,30 +292,39 @@ class Pixels(gym.Wrapper):
 	render camera, which is *not* the camera `camera_view` selects. So this stacks the observation
 	the env already returns, leaving `make_env(camera_resolution=...)` in charge of the size --
 	which is what keeps a TD-MPC2 run's input the same view TSD and the recorded datasets use.
-	Note TD-MPC2's conv encoder asserts 64x64 (`common/layers.py`), so that resolution is not free
-	to change without changing the encoder.
+	Note the conv encoder only has stacks for the resolutions in `common/layers.py`'s CONV_STACKS
+	(64 and 224), so changing `camera_resolution` to anything else needs a stack added there.
 	"""
 
 	def __init__(self, env, cfg, num_frames=3):
 		super().__init__(env)
 		self.cfg = cfg
 		self.env = env
-		channels, height, width = env.observation_space.shape
-		self.observation_space = gym.spaces.Box(
+		# under `obs='rgb_state'` the observation is a two-key dict: stack the camera stream and
+		# pass the proprio stream through untouched, since stacking it would change its width and
+		# stop it matching the DINO agents' proprio vector
+		space = env.observation_space
+		self._dual = isinstance(space, gym.spaces.Dict)
+		channels, height, width = (space['rgb'] if self._dual else space).shape
+		stacked = gym.spaces.Box(
 			low=0, high=255, shape=(num_frames*channels, height, width), dtype=np.uint8)
+		self.observation_space = gym.spaces.Dict(
+			{'rgb': stacked, 'state': space['state']}) if self._dual else stacked
 		self._frames = deque([], maxlen=num_frames)
 
-	def _get_obs(self, frame, is_reset=False):
+	def _get_obs(self, obs, is_reset=False):
+		frame = obs['rgb'] if self._dual else obs
 		for _ in range(self._frames.maxlen if is_reset else 1):
 			self._frames.append(frame)
-		return torch.cat(list(self._frames))
+		stacked = torch.cat(list(self._frames))
+		return {'rgb': stacked, 'state': obs['state']} if self._dual else stacked
 
 	def reset(self):
 		return self._get_obs(self.env.reset(), is_reset=True)
 
 	def step(self, action):
-		frame, reward, done, info = self.env.step(action)
-		return self._get_obs(frame), reward, done, info
+		obs, reward, done, info = self.env.step(action)
+		return self._get_obs(obs), reward, done, info
 
 	def __getattr__(self, name):
 		"""
@@ -274,16 +362,28 @@ def make_env(cfg):
 		task_cfg = dict(env=cfg.task, control_mode=CONTROL_MODE)
 	else:
 		raise ValueError('Unknown task:', cfg.task)
-	assert cfg.obs in {'state', 'rgb'}, 'This task only supports state and rgb observations.'
+	assert cfg.obs in SUPPORTED_OBS, f'obs must be one of {SUPPORTED_OBS}, got {cfg.obs!r}.'
+	# an assert for the same reason as action_repeat's: `envs/__init__.py` swallows ValueError as
+	# "not my task", so a task with no PROPRIO_KEYS entry would be reported as a missing env
+	assert cfg.obs != 'rgb_state' or cfg.task in PROPRIO_KEYS, (
+		f"obs='rgb_state' needs a PROPRIO_KEYS entry for {cfg.task!r}, so that its proprio vector "
+		f'matches the one the DINO-based agents use. Known: {sorted(PROPRIO_KEYS)}.'
+	)
 
 	action_repeat = 1#int(cfg.get('action_repeat', 1))
 	env_kwargs = dict(
-		obs_mode=cfg.obs,
+		# 'rgb_state' is a TD-MPC2-side distinction, not a ManiSkill one: ManiSkill's rgb mode
+		# already returns agent/* and extra/* beside the camera, which is where the proprio stream
+		# comes from. Only `state` mode would drop the camera.
+		obs_mode='rgb' if cfg.obs in VISUAL_OBS else cfg.obs,
 		control_mode=task_cfg["control_mode"],
 		num_envs=1,
 		camera_view="wrist",
-		# 64 rather than the builder's 224 default: TD-MPC2's conv encoder asserts 64x64
-		camera_resolution=64,
+		# 64 by default, matching stock TD-MPC2 and what its augmentation and buffer sizing are
+		# tuned for. `common/layers.py`'s CONV_STACKS also has a 224 stack -- the resolution the
+		# recorded datasets and the DINO-based agents use -- which flattens to the same
+		# num_channels*16 = latent_dim; see the config key for what 224 costs.
+		camera_resolution=cfg.camera_resolution,
 		# TD-MPC2 acts one primitive action at a time and stacks in the channel axis, so neither
 		# of the builder's frame wrappers is applied -- see the module docstring.
 		frame_skip=1,
@@ -312,7 +412,7 @@ def make_env(cfg):
 		task_cfg['env'], reward_wrappers=reward_wrappers, **env_kwargs
 	)
 	env = CustomManiSkillWrapper(env, cfg, action_repeat=action_repeat)
-	if cfg.obs == 'rgb':
+	if cfg.obs in VISUAL_OBS:
 		env = Pixels(env, cfg, num_frames=int(cfg.get('num_frames', 3)))
 	# The task's own registered limit rather than a hardcoded one: 50 steps for PushCube and
 	# friends, 100 for PegInsertionSide-v1. In macro steps, and rounded up because the episode does

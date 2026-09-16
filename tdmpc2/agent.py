@@ -109,7 +109,13 @@ class TDMPC2(torch.nn.Module):
 		Returns:
 			torch.Tensor: Action to take in the environment.
 		"""
-		obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+		if isinstance(obs, dict):
+			# multi-stream observation (obs='rgb_state'): add the batch axis per stream. Left a
+			# plain dict rather than a TensorDict so `to_td` in the trainer still takes its dict
+			# branch; `WorldModel.encode` indexes by key, which works for either.
+			obs = {k: v.to(self.device, non_blocking=True).unsqueeze(0) for k, v in obs.items()}
+		else:
+			obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
 		if task is not None:
 			task = torch.tensor([task], device=self.device)
 		if self.cfg.mpc:

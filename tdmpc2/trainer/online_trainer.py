@@ -57,7 +57,11 @@ class OnlineTrainer(Trainer):
 	def to_td(self, obs, action=None, reward=None, terminated=None):
 		"""Creates a TensorDict for a new episode."""
 		if isinstance(obs, dict):
-			obs = TensorDict(obs, batch_size=(), device='cpu')
+			# multi-stream observation (obs='rgb_state'). Each stream gets the same leading axis
+			# the single-stream branch adds, so the nested batch size matches the (1,) below --
+			# a sub-TensorDict whose batch size does not start with its parent's is rejected.
+			obs = TensorDict(
+				{k: v.unsqueeze(0).cpu() for k, v in obs.items()}, batch_size=(1,), device='cpu')
 		else:
 			obs = obs.unsqueeze(0).cpu()
 		if action is None:

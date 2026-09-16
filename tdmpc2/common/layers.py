@@ -133,18 +133,53 @@ def mlp(in_dim, mlp_dims, out_dim, act=None, dropout=0.):
 	return nn.Sequential(*mlp)
 
 
+CONV_OUT_HW = 4
+"""Spatial extent every stack in CONV_STACKS ends at.
+
+The encoder's output width is `num_channels * CONV_OUT_HW**2` -- 512 at the default 32 channels,
+which is `latent_dim`. Keeping every resolution's stack ending here is what lets the input
+resolution change without the encoder's output width, or anything downstream of it, changing.
+"""
+
+CONV_STACKS = {
+	# (kernel, stride, padding) per conv layer, per input resolution.
+	#
+	# 64 is stock TD-MPC2, unchanged: dm_control renders at 64 (envs/dmcontrol.py's Pixels) and
+	# its checkpoints have to keep loading, so this stack must stay layer-for-layer identical.
+	# 64 -> 29 -> 13 -> 6 -> 4
+	64: ((7, 2, 0), (5, 2, 0), (3, 2, 0), (3, 1, 0)),
+	# 224 is what the ManiSkill tasks and the DINO-based agents use. Two extra stride-2 stages
+	# absorb the 3.5x resolution ahead of the same final stride-1 layer; the padded one is what
+	# makes the chain land on 4 rather than 3.
+	# 224 -> 109 -> 53 -> 26 -> 13 -> 6 -> 4
+	224: ((7, 2, 0), (5, 2, 0), (3, 2, 0), (3, 2, 1), (3, 2, 0), (3, 1, 0)),
+}
+
+
 def conv(in_shape, num_channels, act=None):
 	"""
 	Basic convolutional encoder for TD-MPC2 with raw image observations.
-	4 layers of convolution with ReLU activations, followed by a linear layer.
+	A stack of strided convolutions with ReLU activations, ending at a CONV_OUT_HW square feature
+	map so that the flattened width is `num_channels * CONV_OUT_HW**2` whatever the input
+	resolution. See CONV_STACKS for the per-resolution layer shapes.
 	"""
-	assert in_shape[-1] == 64 # assumes rgb observations to be 64x64
-	layers = [
-		ShiftAug(), PixelPreprocess(),
-		nn.Conv2d(in_shape[0], num_channels, 7, stride=2), nn.ReLU(inplace=False),
-		nn.Conv2d(num_channels, num_channels, 5, stride=2), nn.ReLU(inplace=False),
-		nn.Conv2d(num_channels, num_channels, 3, stride=2), nn.ReLU(inplace=False),
-		nn.Conv2d(num_channels, num_channels, 3, stride=1), nn.Flatten()]
+	assert in_shape[-1] == in_shape[-2], f'expected square images, got {tuple(in_shape)}'
+	resolution = in_shape[-1]
+	if resolution not in CONV_STACKS:
+		raise ValueError(
+			f'No conv stack for {resolution}x{resolution} images; CONV_STACKS has '
+			f'{sorted(CONV_STACKS)}. Add one that ends at {CONV_OUT_HW}x{CONV_OUT_HW}, so the '
+			'encoder keeps producing num_channels*%d features.' % CONV_OUT_HW**2
+		)
+	layers = [ShiftAug(), PixelPreprocess()]
+	channels = in_shape[0]
+	for kernel, stride, padding in CONV_STACKS[resolution]:
+		layers += [
+			nn.Conv2d(channels, num_channels, kernel, stride=stride, padding=padding),
+			nn.ReLU(inplace=False),
+		]
+		channels = num_channels
+	layers[-1] = nn.Flatten()  # the final conv is not followed by a ReLU, as in stock TD-MPC2
 	if act:
 		layers.append(act)
 	return nn.Sequential(*layers)

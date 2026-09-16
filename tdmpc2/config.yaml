@@ -4,6 +4,9 @@
 # environment
 task: mt30
 obs: state
+# Camera resolution for the ManiSkill tasks; must be one of common/layers.py's CONV_STACKS
+# (64 or 224). 64 is stock TD-MPC2. See tsd_online_training_config.yaml for what 224 costs.
+camera_resolution: 64
 episodic: false
 device: cuda:1
 

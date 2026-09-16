@@ -23,6 +23,21 @@ class WorldModel(nn.Module):
 			for i in range(len(cfg.tasks)):
 				self._action_masks[i, :cfg.action_dims[i]] = 1.
 		self._encoder = layers.enc(cfg)
+		# `obs_shape` has one key per observation stream and `layers.enc` builds an encoder for
+		# each. With more than one -- e.g. obs='rgb_state', a camera plus a proprio vector -- their
+		# latents are concatenated and projected back down to latent_dim, so everything downstream
+		# (dynamics, reward, policy prior, Q) still sees a single latent_dim vector and needs no
+		# change. Sorted so the concatenation order does not depend on dict iteration order, which
+		# would otherwise silently permute a reloaded checkpoint's input.
+		self._obs_keys = sorted(cfg.obs_shape.keys())
+		self._fuse = None
+		if len(self._obs_keys) > 1:
+			assert not cfg.multitask, \
+				'multi-stream observations and multitask task embeddings are not supported together'
+			self._fuse = nn.Sequential(
+				nn.Linear(sum(self._stream_dim(cfg, k) for k in self._obs_keys), cfg.latent_dim),
+				layers.SimNorm(cfg),
+			)
 		self._dynamics = layers.mlp(cfg.latent_dim + cfg.action_dim + cfg.task_dim, 2*[cfg.mlp_dim], cfg.latent_dim, act=layers.SimNorm(cfg))
 		self._reward = layers.mlp(cfg.latent_dim + cfg.action_dim + cfg.task_dim, 2*[cfg.mlp_dim], max(cfg.num_bins, 1))
 		self._termination = layers.mlp(cfg.latent_dim + cfg.task_dim, 2*[cfg.mlp_dim], 1) if cfg.episodic else None
@@ -34,6 +49,19 @@ class WorldModel(nn.Module):
 		self.register_buffer("log_std_min", torch.tensor(cfg.log_std_min))
 		self.register_buffer("log_std_dif", torch.tensor(cfg.log_std_max) - self.log_std_min)
 		self.init()
+
+	def _stream_dim(self, cfg, key):
+		"""Output width of one stream's encoder, measured with a dry forward rather than derived.
+
+		`layers.conv` has no final linear layer, so an rgb encoder's width is a function of the
+		input resolution and `num_channels` through four conv layers; measuring it keeps this
+		correct if either changes, where re-deriving the arithmetic here would not.
+		"""
+		shape = tuple(cfg.obs_shape[key])
+		# the state encoder's mlp takes the task embedding concatenated on; the conv one does not
+		x = torch.zeros(1, *shape) if len(shape) > 1 else torch.zeros(1, shape[0] + cfg.task_dim)
+		with torch.no_grad():
+			return self._encoder[key](x).shape[-1]
 
 	def init(self):
 		# Create params
@@ -54,9 +82,10 @@ class WorldModel(nn.Module):
 
 	def __repr__(self):
 		repr = 'TD-MPC2 World Model\n'
-		modules = ['Encoder', 'Dynamics', 'Reward', 'Termination', 'Policy prior', 'Q-functions']
-		for i, m in enumerate([self._encoder, self._dynamics, self._reward, self._termination, self._pi, self._Qs]):
-			if m == self._termination and not self.cfg.episodic:
+		modules = ['Encoder', 'Fusion', 'Dynamics', 'Reward', 'Termination', 'Policy prior', 'Q-functions']
+		for i, m in enumerate([self._encoder, self._fuse, self._dynamics, self._reward, self._termination, self._pi, self._Qs]):
+			# covers both the single-stream case (no fusion) and non-episodic (no termination head)
+			if m is None:
 				continue
 			repr += f"{modules[i]}: {m}\n"
 		repr += "Learnable parameters: {:,}".format(self.total_params)
@@ -100,16 +129,28 @@ class WorldModel(nn.Module):
 			emb = emb.repeat(x.shape[0], 1)
 		return torch.cat([x, emb], dim=-1)
 
+	def _encode_stream(self, key, x):
+		"""One stream through its own encoder.
+
+		The rgb branch loops over a leading time axis because `layers.conv` takes 4D input, while
+		the mlp encoders broadcast over any number of leading dims.
+		"""
+		if key == 'rgb' and x.ndim == 5:
+			return torch.stack([self._encoder[key](o) for o in x])
+		return self._encoder[key](x)
+
 	def encode(self, obs, task):
 		"""
 		Encodes an observation into its latent representation.
-		This implementation assumes a single state-based observation.
+		A single-stream observation is a tensor. A multi-stream one is a dict (or TensorDict) keyed
+		by `cfg.obs_shape`'s keys, whose per-stream latents are fused into one latent_dim vector.
 		"""
 		if self.cfg.multitask:
 			obs = self.task_emb(obs, task)
-		if self.cfg.obs == 'rgb' and obs.ndim == 5:
-			return torch.stack([self._encoder[self.cfg.obs](o) for o in obs])
-		return self._encoder[self.cfg.obs](obs)
+		if self._fuse is None:
+			return self._encode_stream(self.cfg.obs, obs)
+		return self._fuse(torch.cat(
+			[self._encode_stream(k, obs[k]) for k in self._obs_keys], dim=-1))
 
 	def next(self, z, a, task):
 		"""
