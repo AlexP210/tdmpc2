@@ -39,6 +39,8 @@ from mani_skill.utils.registration import REGISTERED_ENVS
 # before torchrl-style imports do or headless rendering fails.
 from custom_maniskill_tasks import (
 	CONTROL_MODE,
+	DEFAULT_LIGHTING_PRESET,
+	DOMAIN_RANDOMIZATION,
 	FOCUSED_CAMERA_UID,
 	WRIST_CAMERA_UID,
 	make_env as make_custom_maniskill_env,
@@ -51,10 +53,18 @@ CUSTOM_MANISKILL_TASKS = {
 	# The `-v1.1` ids are this project's own (registered by importing custom_maniskill_tasks): the
 	# stock tasks with early termination removed, which is the convention every offline dataset
 	# here was collected under.
-	'push-cube': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos'),
-	'place-sphere': dict(env='PlaceSphere-v1.1', control_mode='pd_ee_delta_pos'),
-	'lift-peg-upright': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos'),
-	'pick-cube': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos'),
+	'push-cube': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
+	'place-sphere': dict(env='PlaceSphere-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
+	'lift-peg-upright': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
+	'pick-cube': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
+	# Domain-randomized variants: the same task, but every episode draws its own visual condition
+	# -- one of custom_maniskill_tasks' DOMAIN_RANDOMIZATION_PRESETS (default, bright, warm, object
+	# colour shift) at a severity uniform between the default and that preset. Redrawing rebuilds
+	# the scene on every reset (`reconfiguration_freq=1`), roughly half a second each. See
+	# `LightingMixin` in custom_maniskill_tasks/lighting.py.
+	'push-cube-dr': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
+	'lift-peg-upright-dr': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
+	'pick-cube-dr': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
 }
 
 
@@ -78,6 +88,12 @@ PROPRIO_KEYS = {
 	# the target reaches the model at all; the DINO agents carry the same 28 dims for that reason.
 	'pick-cube':        ('agent/qpos', 'agent/qvel', 'extra/tcp_pose', 'extra/goal_pos'),  # 28
 }
+# A domain-randomized variant observes exactly what its base task does; only the rendering moves.
+PROPRIO_KEYS.update({
+	'push-cube-dr': PROPRIO_KEYS['push-cube'],
+	'lift-peg-upright-dr': PROPRIO_KEYS['lift-peg-upright'],
+	'pick-cube-dr': PROPRIO_KEYS['pick-cube'],
+})
 
 
 SUPPORTED_OBS = ('state', 'rgb', 'rgb_state')
@@ -359,7 +375,7 @@ def make_env(cfg):
 		task_cfg = CUSTOM_MANISKILL_TASKS[cfg.task]
 	elif cfg.task in REGISTERED_ENVS:
 		# any other registered ManiSkill id, spelled out in full, at the project's control mode
-		task_cfg = dict(env=cfg.task, control_mode=CONTROL_MODE)
+		task_cfg = dict(env=cfg.task, control_mode=CONTROL_MODE, lighting=DEFAULT_LIGHTING_PRESET)
 	else:
 		raise ValueError('Unknown task:', cfg.task)
 	assert cfg.obs in SUPPORTED_OBS, f'obs must be one of {SUPPORTED_OBS}, got {cfg.obs!r}.'
@@ -379,6 +395,7 @@ def make_env(cfg):
 		control_mode=task_cfg["control_mode"],
 		num_envs=1,
 		camera_view="wrist",
+		lighting=task_cfg['lighting'],
 		# 64 by default, matching stock TD-MPC2 and what its augmentation and buffer sizing are
 		# tuned for. `common/layers.py`'s CONV_STACKS also has a 224 stack -- the resolution the
 		# recorded datasets and the DINO-based agents use -- which flattens to the same
