@@ -431,6 +431,12 @@ def make_env(cfg):
 	env = CustomManiSkillWrapper(env, cfg, action_repeat=action_repeat)
 	if cfg.obs in VISUAL_OBS:
 		env = Pixels(env, cfg, num_frames=int(cfg.get('num_frames', 3)))
+		if cfg.get('dino_cache', False):
+			# an assert for the same reason as action_repeat's (see above)
+			assert cfg.obs == 'rgb_state' and cfg.get('encoder') == 'dino_cap', \
+				"dino_cache needs obs='rgb_state' and encoder='dino_cap', which reads the features"
+			from tdmpc2.envs.wrappers.dino_features import DinoFeatures
+			env = DinoFeatures(env, cfg, num_frames=int(cfg.get('num_frames', 3)))
 	# The task's own registered limit rather than a hardcoded one: 50 steps for PushCube and
 	# friends, 100 for PegInsertionSide-v1. In macro steps, and rounded up because the episode does
 	# reach a final partial chunk when action_repeat does not divide the limit.
