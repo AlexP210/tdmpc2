@@ -21,7 +21,7 @@ class TDMPC2(torch.nn.Module):
 		self.device = torch.device(cfg.device)
 		self.model = WorldModel(cfg).to(self.device)
 		self.optim = torch.optim.Adam([
-			{'params': self.model._encoder.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
+			{'params': [p for p in self.model._encoder.parameters() if p.requires_grad], 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
 			{'params': self.model._dynamics.parameters()},
 			{'params': self.model._reward.parameters()},
 			{'params': self.model._termination.parameters() if self.cfg.episodic else []},

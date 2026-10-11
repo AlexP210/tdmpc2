@@ -83,6 +83,22 @@ num_q: 5
 dropout: 0.01
 simnorm_dim: 8
 
+# encoder
+# 'cnn' is TD-MPC2's own from-scratch encoder. 'dino_cap' is a frozen DINOv3 backbone with a
+# trainable cross-attention-pooling head, built from S2P's classes (so `s2p` must be importable),
+# for obs='rgb_state' only. It wants camera_resolution=224, and runs DINO on every frame of
+# every sampled window -- see common/dino_cap.py.
+encoder: cnn
+dino_model: dinov3_vits16
+dino_checkpoint: /data/AlexPleava/pretrained_checkpoints/dino/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+dino_resize: 224
+cap_embedding_dim: 512
+cap_n_heads: 4
+cap_n_queries: 4
+cap_ff_hidden_layers: 2
+cap_ff_hidden_dim: 512
+cap_n_blocks: 1
+
 # logging
 wandb_project: Distilling-Planners
 wandb_entity: alex-pleava-university-of-toronto

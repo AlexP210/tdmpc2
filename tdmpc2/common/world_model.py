@@ -22,7 +22,16 @@ class WorldModel(nn.Module):
 			self.register_buffer("_action_masks", torch.zeros(len(cfg.tasks), cfg.action_dim))
 			for i in range(len(cfg.tasks)):
 				self._action_masks[i, :cfg.action_dims[i]] = 1.
-		self._encoder = layers.enc(cfg)
+		# 'dino_cap' swaps the whole per-stream CNN/MLP encoder and the fusion layer below for a
+		# frozen DINOv3 backbone with a trainable CAP head, fed the same `rgb_state` observation.
+		# Built after `weight_init` has run (see below) so that init cannot touch DINO's weights.
+		self._dino_cap = cfg.get('encoder', 'cnn') == 'dino_cap'
+		if self._dino_cap:
+			assert cfg.obs == 'rgb_state' and not cfg.multitask, \
+				"encoder='dino_cap' needs obs='rgb_state' and a single task"
+			self._encoder = nn.Identity()
+		else:
+			self._encoder = layers.enc(cfg)
 		# `obs_shape` has one key per observation stream and `layers.enc` builds an encoder for
 		# each. With more than one -- e.g. obs='rgb_state', a camera plus a proprio vector -- their
 		# latents are concatenated and projected back down to latent_dim, so everything downstream
@@ -31,7 +40,7 @@ class WorldModel(nn.Module):
 		# would otherwise silently permute a reloaded checkpoint's input.
 		self._obs_keys = sorted(cfg.obs_shape.keys())
 		self._fuse = None
-		if len(self._obs_keys) > 1:
+		if len(self._obs_keys) > 1 and not self._dino_cap:
 			assert not cfg.multitask, \
 				'multi-stream observations and multitask task embeddings are not supported together'
 			self._fuse = nn.Sequential(
@@ -45,6 +54,9 @@ class WorldModel(nn.Module):
 		self._Qs = layers.Ensemble([layers.mlp(cfg.latent_dim + cfg.action_dim + cfg.task_dim, 2*[cfg.mlp_dim], max(cfg.num_bins, 1), dropout=cfg.dropout) for _ in range(cfg.num_q)])
 		self.apply(init.weight_init)
 		init.zero_([self._reward[-1].weight, self._Qs.params["2", "weight"]])
+		if self._dino_cap:
+			from tdmpc2.common.dino_cap import DinoCAPEncoder
+			self._encoder = DinoCAPEncoder(cfg)
 
 		self.register_buffer("log_std_min", torch.tensor(cfg.log_std_min))
 		self.register_buffer("log_std_dif", torch.tensor(cfg.log_std_max) - self.log_std_min)
@@ -147,6 +159,8 @@ class WorldModel(nn.Module):
 		"""
 		if self.cfg.multitask:
 			obs = self.task_emb(obs, task)
+		if self._dino_cap:
+			return self._encoder(obs)
 		if self._fuse is None:
 			return self._encode_stream(self.cfg.obs, obs)
 		return self._fuse(torch.cat(
