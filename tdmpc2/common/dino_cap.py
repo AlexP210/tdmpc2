@@ -33,7 +33,7 @@ def build_vision_encoder(cfg, task):
 class DinoCAPEncoder(nn.Module):
 	"""
 	A frozen DINOv3 backbone with a trainable cross-attention-pooling (CAP) head, built directly
-	from S2P's classes so it is the same encoder S2P's `train_visual_online_deterministic` uses:
+	from S2P's classes so it is the same encoder S2P's `train_dino_deterministic` uses:
 
 		TeacherStudentEncoderModel(
 			teacher=JointEncoderModel([DINOv3 patch tokens of `rgb`, identity of `proprio`]),
