@@ -43,7 +43,6 @@ from custom_maniskill_tasks import (
 	DEFAULT_LIGHTING_PRESET,
 	DOMAIN_RANDOMIZATION,
 	FOCUSED_CAMERA_UID,
-	RANDOMIZE,
 	WRIST_CAMERA_UID,
 	make_env as make_custom_maniskill_env,
 )
@@ -67,18 +66,20 @@ CUSTOM_MANISKILL_TASKS = {
 	'push-cube-dr': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
 	'lift-peg-upright-dr': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
 	'pick-cube-dr': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
-	# Full domain randomization, matching S2P's `task/maniskill_lift_peg_dr.yaml`: lighting, texture,
-	# table material, viewpoint and corruption each drawn afresh on every reset from what the
-	# visual-robustness evaluation runs (see `custom_maniskill_tasks.randomize`); no distractors.
+	# Full domain randomization, matching S2P's `task/maniskill_lift_peg_dr.yaml`: every axis of
+	# `custom_maniskill_tasks.domain_randomization` drawn afresh on every reset (training split).
 	'lift-peg-upright-randomize': dict(
-		env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=RANDOMIZE,
-		texture=RANDOMIZE, table_material=RANDOMIZE, viewpoint=RANDOMIZE, corruption=RANDOMIZE,
+		env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET,
+		domain_randomization=['lighting', 'object_colour', 'table_colour', 'table_texture', 'table_material'],
 	),
 }
 
 # The perturbation kwargs a task entry may set beyond `lighting`; any it leaves out stay at
 # `make_env`'s defaults (unperturbed).
-PERTURBATION_KWARGS = ('texture', 'table_material', 'distractors', 'viewpoint', 'corruption')
+PERTURBATION_KWARGS = (
+	'texture', 'table_material', 'distractors', 'viewpoint', 'corruption',
+	'domain_randomization', 'domain_randomization_split',
+)
 
 
 # The proprioceptive vector TD-MPC2 sees under `obs='rgb_state'`, per task.
