@@ -40,8 +40,6 @@ from mani_skill.utils.registration import REGISTERED_ENVS
 # before torchrl-style imports do or headless rendering fails.
 from custom_maniskill_tasks import (
 	CONTROL_MODE,
-	DEFAULT_LIGHTING_PRESET,
-	DOMAIN_RANDOMIZATION,
 	FOCUSED_CAMERA_UID,
 	WRIST_CAMERA_UID,
 	make_env as make_custom_maniskill_env,
@@ -50,38 +48,34 @@ from custom_maniskill_tasks import (
 from tdmpc2.envs.wrappers.timeout import Timeout
 
 
-CUSTOM_MANISKILL_TASKS = {
-	# The `-v1.1` ids are this project's own (registered by importing custom_maniskill_tasks): the
-	# stock tasks with early termination removed, which is the convention every offline dataset
-	# here was collected under.
-	'push-cube': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
-	'place-sphere': dict(env='PlaceSphere-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
-	'lift-peg-upright': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
-	'pick-cube': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET),
-	# Domain-randomized variants: the same task, but every episode draws its own visual condition
-	# -- one of custom_maniskill_tasks' DOMAIN_RANDOMIZATION_PRESETS (default, bright, warm, object
-	# colour shift) at a severity uniform between the default and that preset. Redrawing rebuilds
-	# the scene on every reset (`reconfiguration_freq=1`), roughly half a second each. See
-	# `LightingMixin` in custom_maniskill_tasks/lighting.py.
-	'push-cube-dr': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
-	'lift-peg-upright-dr': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
-	'pick-cube-dr': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
-	# Full domain randomization, matching S2P's `task/maniskill_lift_peg_dr.yaml`: each listed
-	# appearance axis drawn afresh on every reset from the training split (see
-	# `custom_maniskill_tasks.domain_randomization`); no distractors.
-	'lift-peg-upright-randomize': dict(
-		env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET,
-		domain_randomization=['lighting', 'object_colour', 'table_colour', 'table_texture', 'table_material'],
-		domain_randomization_split='train',
-	),
+# The tasks, matching the ones S2P instantiates from `s2p/configs/task/maniskill_<task>.yaml` (and
+# `maniskill_<task>_dr.yaml` for the `-dr` ones): the same task id, control mode, wrist camera and
+# perturbation classes, so a TD-MPC2 baseline runs in the same scene as the methods it is compared
+# against. `tests/test_s2p_task_parity.py` fails if the two drift apart.
+#
+# The `-v1.1` ids are this project's own (registered by importing custom_maniskill_tasks): the
+# stock tasks with early termination removed, which is the convention every offline dataset here
+# was collected under. `perturbations` is passed to `make_env` as is (see
+# `custom_maniskill_tasks.perturbation_classes`); leaving it out is the stock scene.
+#
+# The `-dr` ones draw lighting, object colour, table colour, table texture and table material
+# afresh every episode from the training range. Each reset rebuilds the scene
+# (`reconfiguration_freq=1`), roughly half a second.
+DOMAIN_RANDOMIZATION = {
+	cls: 'randomize-train'
+	for cls in ('lighting', 'object_colour', 'table_colour', 'table_texture', 'table_material')
 }
 
-# The perturbation kwargs a task entry may set beyond `lighting`; any it leaves out stay at
-# `make_env`'s defaults (unperturbed).
-PERTURBATION_KWARGS = (
-	'texture', 'table_material', 'distractors', 'viewpoint', 'corruption',
-	'domain_randomization', 'domain_randomization_split',
-)
+CUSTOM_MANISKILL_TASKS = {
+	'push-cube': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos'),
+	'lift-peg': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos'),
+	'pick-cube': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos'),
+	'push-cube-dr': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos', perturbations=DOMAIN_RANDOMIZATION),
+	'lift-peg-dr': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', perturbations=DOMAIN_RANDOMIZATION),
+	'pick-cube-dr': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos', perturbations=DOMAIN_RANDOMIZATION),
+	# S2P has no domain-randomized PlaceSphere config, so there is no `-dr` one here either
+	'place-sphere': dict(env='PlaceSphere-v1.1', control_mode='pd_ee_delta_pos'),
+}
 
 
 # The proprioceptive vector TD-MPC2 sees under `obs='rgb_state'`, per task.
@@ -98,7 +92,7 @@ PERTURBATION_KWARGS = (
 PROPRIO_KEYS = {
 	'push-cube':        ('agent/qpos', 'agent/qvel', 'extra/tcp_pose'),  # 9 + 9 + 7 = 25
 	'place-sphere':     ('agent/qpos', 'agent/qvel', 'extra/tcp_pose'),  # 25
-	'lift-peg-upright': ('agent/qpos', 'agent/qvel', 'extra/tcp_pose'),  # 25
+	'lift-peg':         ('agent/qpos', 'agent/qvel', 'extra/tcp_pose'),  # 25
 	# PickCube's `goal_site` is in ManiSkill's `_hidden_objects`, so the target is invisible in
 	# every camera frame and a grasped cube looks the same wherever the arm is. `goal_pos` is how
 	# the target reaches the model at all; the DINO agents carry the same 28 dims for that reason.
@@ -106,10 +100,7 @@ PROPRIO_KEYS = {
 }
 # A domain-randomized variant observes exactly what its base task does; only the rendering moves.
 PROPRIO_KEYS.update({
-	'push-cube-dr': PROPRIO_KEYS['push-cube'],
-	'lift-peg-upright-dr': PROPRIO_KEYS['lift-peg-upright'],
-	'pick-cube-dr': PROPRIO_KEYS['pick-cube'],
-	'lift-peg-upright-randomize': PROPRIO_KEYS['lift-peg-upright'],
+	f'{task}-dr': PROPRIO_KEYS[task] for task in ('push-cube', 'lift-peg', 'pick-cube')
 })
 
 
@@ -334,9 +325,8 @@ class Pixels(gym.Wrapper):
 	stack.
 
 	With `cfg.encoder_resolution` set below the camera's, each frame is area-downsampled to it
-	before stacking. The env renders and applies any `corruption` at `camera_resolution`, so a
-	perturbation keeps the strength it has for agents that see the full-size image, while the
-	encoder and the replay buffer only pay for the smaller one.
+	before stacking. The env renders at `camera_resolution`, so agents that see the full-size image and this
+	one get the same scene, while the encoder and the replay buffer only pay for the smaller one.
 	"""
 
 	def __init__(self, env, cfg, num_frames=3):
@@ -427,7 +417,7 @@ def make_env(cfg):
 		task_cfg = CUSTOM_MANISKILL_TASKS[cfg.task]
 	elif cfg.task in REGISTERED_ENVS:
 		# any other registered ManiSkill id, spelled out in full, at the project's control mode
-		task_cfg = dict(env=cfg.task, control_mode=CONTROL_MODE, lighting=DEFAULT_LIGHTING_PRESET)
+		task_cfg = dict(env=cfg.task, control_mode=CONTROL_MODE)
 	else:
 		raise ValueError('Unknown task:', cfg.task)
 	assert cfg.obs in SUPPORTED_OBS, f'obs must be one of {SUPPORTED_OBS}, got {cfg.obs!r}.'
@@ -447,8 +437,7 @@ def make_env(cfg):
 		control_mode=task_cfg["control_mode"],
 		num_envs=1,
 		camera_view="wrist",
-		lighting=task_cfg['lighting'],
-		**{k: task_cfg[k] for k in PERTURBATION_KWARGS if k in task_cfg},
+		perturbations=task_cfg.get('perturbations'),
 		# 64 by default, matching stock TD-MPC2 and what its augmentation and buffer sizing are
 		# tuned for. `common/layers.py`'s CONV_STACKS also has a 224 stack -- the resolution the
 		# recorded datasets and the DINO-based agents use -- which flattens to the same
@@ -463,23 +452,8 @@ def make_env(cfg):
 		sim_backend=f"physx_cuda:{cfg.device.split(':')[1]}",
 	)
 
-	# # TEMPORARY (2026-08-26): swap the task's dense reward for DINO-feature progress towards a
-	# # per-episode goal image. Delete this block and `envs/dino_goal_reward.py` to revert.
-	reward_wrappers = ()
-	# if cfg.dino_reward:
-	# 	assert cfg.task == 'push-cube', \
-	# 		f'dino_reward only builds a goal image for push-cube, not {cfg.task}'
-	# 	from tdmpc2.envs.dino_goal_reward import reward_wrappers as dino_reward_wrappers
-	# 	reward_wrappers = dino_reward_wrappers(
-	# 		cfg,
-	# 		# the mirror env must match the training env exactly, or the goal image would be
-	# 		# rendered through a different camera than the observations
-	# 		env_factory=lambda: make_custom_maniskill_env(task_cfg['env'], **env_kwargs),
-	# 		camera_uid=WRIST_CAMERA_UID,
-	# 	)
-
 	env = make_custom_maniskill_env(
-		task_cfg['env'], reward_wrappers=reward_wrappers, **env_kwargs
+		task_cfg['env'], **env_kwargs
 	)
 	env = CustomManiSkillWrapper(env, cfg, action_repeat=action_repeat)
 	if cfg.obs in VISUAL_OBS:

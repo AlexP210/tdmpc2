@@ -2,35 +2,42 @@
 #     - override hydra/launcher: submitit_local
 
 # environment
-task: mt30
-obs: state
-# Camera resolution for the ManiSkill tasks; must be one of common/layers.py's CONV_STACKS
-# (64 or 224). 64 is stock TD-MPC2. See tsd_online_training_config.yaml for what 224 costs.
+task: ???
+# 'rgb_state': the camera frame plus the same proprioceptive vector the DINO-based agents get
+# (28-dim for pick-cube, 25 elsewhere -- see PROPRIO_KEYS in envs/custom_maniskill.py), so this
+# baseline's non-visual input matches theirs. 'rgb' alone cannot represent pick-cube's target at
+# all, since its goal marker is hidden from every camera.
+obs: rgb_state
+# Under 'rgb_state', stack the proprio vector over the same num_frames as the camera frames
+# (concatenated oldest first), giving the agent the proprio history the S2P agents get from their
+# frame stack. Off keeps the single-frame vector above, which is what existing checkpoints expect.
+stack_proprio: true
+# Camera resolution for the ManiSkill tasks. Must be one of the stacks in common/layers.py's
+# CONV_STACKS (64 or 224); both flatten to num_channels*16 = latent_dim, so the encoder's output
+# width is unaffected either way.
+#
+# 64 is stock TD-MPC2 and what its tuning assumes. 224 is what the recorded datasets and the
+# DINO-based agents use, but measured at H=3/B=256 on a 4090 it costs ~15x the encode time
+# (6.4 -> 93.7 ms), 11x the activation memory, and 12x the replay storage -- 451 GB at
+# buffer_size: 1_000_000 below, which does not fit in this machine's 125 GB of RAM. It also
+# leaves ShiftAug(pad=3) shifting 1.3% of the frame instead of 4.7%, weakening the augmentation
+# TD-MPC2 is tuned around. Raising this means lowering buffer_size and rescaling that pad.
 camera_resolution: 64
+# Downsample each camera frame to this (area interpolation) before the encoder and the replay
+# buffer; null feeds them camera_resolution as is. Must be a CONV_STACKS resolution. E.g.
+# camera_resolution=224 with encoder_resolution=64 renders the scene at the DINO agents'
+# resolution while costing what 64 does.
+encoder_resolution: null
 episodic: false
 device: cuda:1
 
-# DINO goal-image reward -- TEMPORARY (2026-08-26), see envs/dino_goal_reward.py.
-# Set dino_reward: false to restore the task's own dense reward.
-dino_reward: false
-dino_reward_model: dinov3_vits16
-dino_reward_checkpoint: /data/AlexPleava/pretrained_checkpoints/dino/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
-dino_reward_resize: 224
-# "negative_distance" for r_t = -d_t (pays to reach AND hold), "delta" for r_t = d_{t-1} - d_t.
-# The scale differs by shaping and is load-bearing -- TD-MPC2 bins values over vmin/vmax below.
-# At discount 0.95 a 50-step episode is worth ~18.5x the per-step reward, so scale 1.0 puts
-# negative_distance returns in about [-6, 0]. "delta" instead wants a scale near 20.0, since its
-# return telescopes to d_0 - d_T (~0.15 raw).
-dino_reward_shaping: negative_distance
-dino_reward_scale: 1.0
-
 # evaluation
-checkpoint: /data/AlexPleava/TDMPC2/checkpoints/mt30-317M.pt
+checkpoint: ???
 eval_episodes: 5
-eval_freq: 50000
+eval_freq: 10000
 
 # training
-steps: 10_000_000
+steps: 1_000_000
 batch_size: 256
 reward_coef: 0.1
 value_coef: 0.1
@@ -104,7 +111,7 @@ cap_ff_hidden_dim: 512
 cap_n_blocks: 1
 
 # logging
-wandb_project: Distilling-Planners
+wandb_project: Task-Specialized-Distillation
 wandb_entity: alex-pleava-university-of-toronto
 wandb_silent: false
 enable_wandb: true
