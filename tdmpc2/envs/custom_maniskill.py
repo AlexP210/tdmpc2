@@ -66,7 +66,6 @@ CUSTOM_MANISKILL_TASKS = {
 	'push-cube-dr': dict(env='PushCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
 	'lift-peg-upright-dr': dict(env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
 	'pick-cube-dr': dict(env='PickCube-v1.1', control_mode='pd_ee_delta_pos', lighting=DOMAIN_RANDOMIZATION),
-<<<<<<< HEAD
 	# Full domain randomization, matching S2P's `task/maniskill_lift_peg_dr.yaml`: each listed
 	# appearance axis drawn afresh on every reset from the training split (see
 	# `custom_maniskill_tasks.domain_randomization`); no distractors.
@@ -74,13 +73,6 @@ CUSTOM_MANISKILL_TASKS = {
 		env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET,
 		domain_randomization=['lighting', 'object_colour', 'table_colour', 'table_texture', 'table_material'],
 		domain_randomization_split='train',
-=======
-	# Full domain randomization, matching S2P's `task/maniskill_lift_peg_dr.yaml`: every axis of
-	# `custom_maniskill_tasks.domain_randomization` drawn afresh on every reset (training split).
-	'lift-peg-upright-randomize': dict(
-		env='LiftPegUpright-v1.1', control_mode='pd_ee_delta_pos', lighting=DEFAULT_LIGHTING_PRESET,
-		domain_randomization=['lighting', 'object_colour', 'table_colour', 'table_texture', 'table_material'],
->>>>>>> 344a29b3422979e1f04ba0a0ad327f6449bf0fdf
 	),
 }
 
