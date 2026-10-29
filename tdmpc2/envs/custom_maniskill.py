@@ -327,6 +327,13 @@ class Pixels(gym.Wrapper):
 	With `cfg.encoder_resolution` set below the camera's, each frame is area-downsampled to it
 	before stacking. The env renders at `camera_resolution`, so agents that see the full-size image and this
 	one get the same scene, while the encoder and the replay buffer only pay for the smaller one.
+
+	With `cfg.lowpass_resolution` set, the env renders at that resolution (see `make_env`) and each
+	frame is bilinearly upsampled here to `camera_resolution`. The encoder, buffer and ShiftAug then
+	see a `camera_resolution` image whose content is exactly a native `lowpass_resolution` render's.
+	Rendering low rather than downsampling a full-size frame is deliberate: the renderer point-samples
+	each pixel from a mip level chosen for that pixel size, which no downsample of a 224 frame
+	reproduces (area averaging blurs the aliasing away, point sampling keeps finer mip detail).
 	"""
 
 	def __init__(self, env, cfg, num_frames=3):
@@ -340,6 +347,13 @@ class Pixels(gym.Wrapper):
 		self._dual = isinstance(space, gym.spaces.Dict)
 		self._stack_proprio = self._dual and bool(cfg.get('stack_proprio', False))
 		channels, height, width = (space['rgb'] if self._dual else space).shape
+		self._lowpass = cfg.lowpass_resolution
+		if self._lowpass is not None:
+			assert cfg.get('encoder_resolution', None) is None, \
+				'lowpass_resolution and encoder_resolution both resample the frame; set one of them'
+			assert (height, width) == (self._lowpass, self._lowpass), (
+				f'expected the env to render at lowpass_resolution={self._lowpass}, got {height}x{width}')
+			height = width = cfg.camera_resolution
 		self._resize = cfg.get('encoder_resolution', None)
 		if self._resize is not None and (self._resize, self._resize) != (height, width):
 			assert cfg.get('encoder') != 'dino_cap', \
@@ -350,6 +364,7 @@ class Pixels(gym.Wrapper):
 			height = width = self._resize
 		else:
 			self._resize = None
+		self._size = (height, width)
 		stacked = gym.spaces.Box(
 			low=0, high=255, shape=(num_frames*channels, height, width), dtype=np.uint8)
 		state_space = space['state'] if self._dual else None
@@ -366,6 +381,9 @@ class Pixels(gym.Wrapper):
 		frame = obs['rgb'] if self._dual else obs
 		if self._resize is not None:
 			frame = F.interpolate(frame[None].float(), size=(self._resize, self._resize), mode='area')[0]
+			frame = frame.round().clamp_(0, 255).to(torch.uint8)
+		if self._lowpass is not None:
+			frame = F.interpolate(frame[None].float(), size=self._size, mode='bilinear', align_corners=False)[0]
 			frame = frame.round().clamp_(0, 255).to(torch.uint8)
 		for _ in range(self._frames.maxlen if is_reset else 1):
 			self._frames.append(frame)
@@ -429,6 +447,20 @@ def make_env(cfg):
 	)
 
 	action_repeat = 1#int(cfg.get('action_repeat', 1))
+	perturbations = task_cfg.get('perturbations')
+	if cfg.perturbations is not None:
+		# an assert for the same reason as action_repeat's (see above)
+		assert perturbations is None, (
+			f'{cfg.task!r} already sets perturbations={perturbations}; cfg.perturbations would '
+			'replace them, so use the base task instead')
+		perturbations = cfg.perturbations
+	# under lowpass_resolution the scene is rendered at it and `Pixels` upsamples to camera_resolution
+	render_resolution = cfg.camera_resolution
+	if cfg.lowpass_resolution is not None:
+		assert cfg.obs in VISUAL_OBS and cfg.lowpass_resolution < cfg.camera_resolution, (
+			f'lowpass_resolution={cfg.lowpass_resolution} needs a visual obs and must be below '
+			f'camera_resolution={cfg.camera_resolution}')
+		render_resolution = cfg.lowpass_resolution
 	env_kwargs = dict(
 		# 'rgb_state' is a TD-MPC2-side distinction, not a ManiSkill one: ManiSkill's rgb mode
 		# already returns agent/* and extra/* beside the camera, which is where the proprio stream
@@ -437,12 +469,12 @@ def make_env(cfg):
 		control_mode=task_cfg["control_mode"],
 		num_envs=1,
 		camera_view="wrist",
-		perturbations=task_cfg.get('perturbations'),
+		perturbations=perturbations,
 		# 64 by default, matching stock TD-MPC2 and what its augmentation and buffer sizing are
 		# tuned for. `common/layers.py`'s CONV_STACKS also has a 224 stack -- the resolution the
 		# recorded datasets and the DINO-based agents use -- which flattens to the same
 		# num_channels*16 = latent_dim; see the config key for what 224 costs.
-		camera_resolution=cfg.camera_resolution,
+		camera_resolution=render_resolution,
 		# TD-MPC2 acts one primitive action at a time and stacks in the channel axis, so neither
 		# of the builder's frame wrappers is applied -- see the module docstring.
 		frame_skip=1,

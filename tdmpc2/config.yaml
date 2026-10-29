@@ -28,6 +28,16 @@ camera_resolution: 64
 # camera_resolution=224 with encoder_resolution=64 renders the scene at the DINO agents'
 # resolution while costing what 64 does.
 encoder_resolution: null
+# Render the scene at this resolution and bilinearly upsample each frame to camera_resolution, before
+# the encoder and the replay buffer; null renders at camera_resolution. The encoder, buffer and
+# ShiftAug then run at camera_resolution exactly as without it, but the image is a native render at
+# this resolution: camera_resolution=224 with lowpass_resolution=64 is the 224 recipe seeing what a
+# 64 px run sees. Not combinable with encoder_resolution.
+lowpass_resolution: null
+# Perturbation classes for custom_maniskill_tasks' `make_env` (see its README), e.g.
+# {lighting: {brightness: 1.5}}; null is the stock scene. Only for a task without perturbations
+# of its own, so a `-dr` task's randomization is never quietly replaced.
+perturbations: null
 episodic: false
 device: cuda:1
 
