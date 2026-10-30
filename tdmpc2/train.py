@@ -10,6 +10,7 @@ import torch
 import hydra
 from termcolor import colored
 
+from tdmpc2.common import resume
 from tdmpc2.common.parser import parse_cfg
 from tdmpc2.common.seed import set_seed
 from tdmpc2.common.buffer import Buffer
@@ -41,6 +42,7 @@ def train(cfg: dict):
 		$ python train.py task=mt80 model_size=48
 		$ python train.py task=mt30 model_size=317
 		$ python train.py task=dog-run steps=7000000
+		$ python train.py task=dog-run steps=7000000 resume=true  # after it stopped abnormally
 	```
 	"""
 	assert torch.cuda.is_available()
@@ -49,14 +51,26 @@ def train(cfg: dict):
 	set_seed(cfg.seed)
 	print(colored('Work dir:', 'yellow', attrs=['bold']), cfg.work_dir)
 
+	if cfg.resume:
+		assert not cfg.multitask, 'resume=true is only supported for online (single-task) training'
+		assert resume.exists(cfg), f'resume=true, but there is no backup in {resume.directory(cfg)}'
+		resume_state = resume.load(cfg)
+	else:
+		assert not resume.exists(cfg), (
+			f'{resume.directory(cfg)} holds the backup of an unfinished run with this run_name: pass '
+			'resume=true to continue it, or delete that directory to start over')
+		resume_state = None
+
 	trainer_cls = OfflineTrainer if cfg.multitask else OnlineTrainer
 	trainer = trainer_cls(
 		cfg=cfg,
 		env=make_env(cfg),
 		agent=TDMPC2(cfg),
 		buffer=Buffer(cfg),
-		logger=Logger(cfg),
+		logger=Logger(cfg, None if resume_state is None else resume_state['logger']),
 	)
+	if resume_state is not None:
+		trainer.resume(resume_state)
 	trainer.train()
 	print('\nTraining completed successfully')
 

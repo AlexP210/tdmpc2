@@ -1,7 +1,14 @@
+import os
+import shutil
+
 import torch
 from tensordict.tensordict import TensorDict
 from torchrl.data.replay_buffers import ReplayBuffer, LazyTensorStorage
 from torchrl.data.replay_buffers.samplers import SliceSampler
+
+# Transitions copied at a time between the storage and a backup chunk, so neither direction holds a
+# second in-memory copy of a whole chunk (4.5 GB per 10k transitions at camera_resolution=224)
+CHUNK_SLICE = 1024
 
 
 class Buffer():
@@ -24,6 +31,8 @@ class Buffer():
 		)
 		self._batch_size = cfg.batch_size * (cfg.horizon+1)
 		self._num_eps = 0
+		# storage indices written by `add` since the last `save_new`, oldest first
+		self._unsaved = []
 
 	@property
 	def capacity(self):
@@ -86,9 +95,49 @@ class Buffer():
 		td['episode'] = torch.full_like(td['reward'], self._num_eps, dtype=torch.int64)
 		if self._num_eps == 0:
 			self._buffer = self._init(td)
-		self._buffer.extend(td)
+		self._unsaved.append(self._buffer.extend(td))
 		self._num_eps += 1
 		return self._num_eps
+
+	def save_new(self, directory):
+		"""Write the transitions added since the last call to a new chunk under `directory`.
+
+		Returns the chunk's `name` and `length`, or None if nothing was added. Only the newest
+		`capacity` of them are still in storage, which is all `restore` needs anyway. The chunk is
+		written under a temporary name and renamed once complete, so a crash mid-write leaves
+		nothing `restore` would read.
+		"""
+		if not self._unsaved:
+			return None
+		idx = torch.cat(self._unsaved)[-self._capacity:]
+		name = f'chunk_{self._num_eps:09d}'
+		tmp = directory / f'{name}.tmp'
+		shutil.rmtree(tmp, ignore_errors=True)
+		storage = self._buffer.storage
+		chunk = storage.get(idx[:1]).cpu().expand(len(idx)).memmap_like(tmp)
+		for start in range(0, len(idx), CHUNK_SLICE):
+			chunk[start:start+CHUNK_SLICE] = storage.get(idx[start:start+CHUNK_SLICE]).cpu()
+		os.replace(tmp, directory / name)
+		self._unsaved = []
+		return dict(name=name, length=len(idx))
+
+	def restore(self, directory, chunks, num_eps):
+		"""Refill an empty buffer from the chunks `save_new` wrote, oldest first.
+
+		Re-extending in the original order leaves the storage holding the same newest `capacity`
+		transitions, with the oldest at the write cursor, so FIFO eviction carries on as it would
+		have. `num_eps` is the episode count at the backup, which numbers the next episode added.
+		"""
+		assert self._num_eps == 0, 'restore needs an empty buffer'
+		for info in chunks:
+			chunk = TensorDict.load_memmap(directory / info['name'])
+			for start in range(0, len(chunk), CHUNK_SLICE):
+				part = chunk[start:start+CHUNK_SLICE]
+				if not hasattr(self, '_buffer'):
+					self._buffer = self._init(part)
+				self._buffer.extend(part)
+		self._num_eps = num_eps
+		print(f'Restored {len(self._buffer):,} transitions from {len(chunks)} chunks.')
 
 	def _prepare_batch(self, td):
 		"""

@@ -262,6 +262,14 @@ class CustomManiSkillWrapper(gym.Wrapper):
 		obs, _ = self.env.reset(**kwargs)
 		return self._observation(obs)
 
+	def seed_next_reset(self, seed):
+		"""Seed the next reset with `seed`, as construction does with `cfg.seed`.
+
+		For a resumed run, whose freshly built env would otherwise reseed with `cfg.seed` and replay
+		the run's first episodes (initial states and domain-randomization draws alike).
+		"""
+		self._seed = seed
+
 	def step(self, action):
 		action = torch.as_tensor(np.asarray(action), dtype=torch.float32).reshape(1, -1)
 		reward = 0.0

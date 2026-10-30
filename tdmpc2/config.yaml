@@ -133,6 +133,17 @@ save_video: true
 save_agent: true
 seed: 1
 
+# resuming
+# Back up everything an online run needs to continue -- model, optimizers, RunningScale, replay
+# buffer, step counters, RNG state and wandb run id -- to <work_dir>/resume after every eval, and
+# delete it once the run finishes. The buffer is written incrementally, one chunk of new transitions
+# per eval, so a backup costs eval_freq transitions of disk writes rather than the whole buffer; the
+# directory holds about one buffer's worth (~45 GB at camera_resolution=224, buffer_size=100_000).
+save_resume_state: true
+# Continue from the backup in <work_dir>/resume: rerun the same command with `resume=true`. A fresh
+# run refuses to start over an existing backup rather than overwrite it.
+resume: false
+
 # convenience
 work_dir: ???
 task_title: ???
