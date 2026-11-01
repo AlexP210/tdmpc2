@@ -58,12 +58,13 @@ from tdmpc2.envs.wrappers.timeout import Timeout
 # was collected under. `perturbations` is passed to `make_env` as is (see
 # `custom_maniskill_tasks.perturbation_classes`); leaving it out is the stock scene.
 #
-# The `-dr` ones draw lighting, object colour, table colour, table texture and table material
-# afresh every episode from the training range. Each reset rebuilds the scene
-# (`reconfiguration_freq=1`), roughly half a second.
+# The `-dr` ones draw lighting, object colour, table colour, table texture, table material and
+# viewpoint (the wrist camera's position, orientation and fov; every task here uses the wrist
+# camera, which it needs) afresh every episode from the training range. Each reset rebuilds the
+# scene (`reconfiguration_freq=1`), roughly half a second.
 DOMAIN_RANDOMIZATION = {
 	cls: 'randomize-train'
-	for cls in ('lighting', 'object_colour', 'table_colour', 'table_texture', 'table_material')
+	for cls in ('lighting', 'object_colour', 'table_colour', 'table_texture', 'table_material', 'viewpoint')
 }
 
 CUSTOM_MANISKILL_TASKS = {
