@@ -106,14 +106,17 @@ class VideoRecorder:
 class Logger:
 	"""Primary logging object. Logs either locally or using wandb."""
 
-	def __init__(self, cfg):
+	def __init__(self, cfg, state=None):
+		"""`state` is what `state_dict` returned in the run being resumed, if any."""
 		self._log_dir = make_dir(cfg.work_dir)
 		self._model_dir = make_dir(self._log_dir / "models")
 		self._save_csv = cfg.save_csv
 		self._save_agent = cfg.save_agent
 		self._group = cfg_to_group(cfg)
 		self._seed = cfg.seed
-		self._eval = []
+		# the earlier rows too, since eval.csv is rewritten whole on every eval
+		self._eval = [] if state is None else list(state['eval_rows'])
+		resume_id = None if state is None else state['wandb_id']
 		print_run(cfg)
 		self.project = cfg.get("wandb_project", "none")
 		self.entity = cfg.get("wandb_entity", "none")
@@ -127,6 +130,14 @@ class Logger:
 		os.environ["WANDB_SILENT"] = "true" if cfg.wandb_silent else "false"
 		import wandb
 
+		# A resumed run continues its wandb run. The config is not re-sent: it was recorded at the
+		# start, and `resume=true` alone would differ from it. wandb drops points at steps the
+		# crashed process already logged, so the curve between the backup and the crash keeps the
+		# crashed process's values.
+		run_kwargs = (
+			dict(config=dataclasses.asdict(cfg)) if resume_id is None
+			else dict(id=resume_id, resume="must")
+		)
 		wandb.init(
 			project=self.project,
 			entity=self.entity,
@@ -134,7 +145,7 @@ class Logger:
 			group=self._group,
 			tags=cfg_to_group(cfg, return_list=True) + [f"seed:{cfg.seed}"],
 			dir=self._log_dir,
-			config=dataclasses.asdict(cfg),
+			**run_kwargs,
 		)
 		print(colored("Logs will be synced with wandb.", "blue", attrs=["bold"]))
 		self._wandb = wandb
@@ -151,6 +162,13 @@ class Logger:
 	@property
 	def model_dir(self):
 		return self._model_dir
+
+	def state_dict(self):
+		"""What a resumed run's Logger needs to continue this one's logs."""
+		return dict(
+			wandb_id=self._wandb.run.id if self._wandb else None,
+			eval_rows=list(self._eval),
+		)
 
 	def save_agent(self, agent=None, identifier='final'):
 		if self._save_agent and agent:

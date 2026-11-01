@@ -95,6 +95,23 @@ class TDMPC2(torch.nn.Module):
 		self.model.load_state_dict(state_dict)
 		return
 
+	def training_state(self):
+		"""Everything continuing training needs: the model as `save` writes it, plus the two
+		optimizers and the running Q scale, which `save` leaves out."""
+		return dict(
+			model=self.model.state_dict(),
+			optim=self.optim.state_dict(),
+			pi_optim=self.pi_optim.state_dict(),
+			scale=self.scale.state_dict(),
+		)
+
+	def load_training_state(self, state):
+		"""Restore what `training_state` returned."""
+		self.model.load_state_dict(state['model'])
+		self.optim.load_state_dict(state['optim'])
+		self.pi_optim.load_state_dict(state['pi_optim'])
+		self.scale.load_state_dict(state['scale'])
+
 	@torch.no_grad()
 	def act(self, obs, t0=False, eval_mode=False, task=None):
 		"""
